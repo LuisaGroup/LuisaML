@@ -1,5 +1,6 @@
 #pragma once
-#include <luisa/runtime/byte_buffer.h>
+#include "luisa_ml_config.h"
+#include <luisa/core/stl/vector.h>
 
 namespace luisa::compute::dynamic_array {
 

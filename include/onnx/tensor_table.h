@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <memory>
 #include <functional>
 #include <variant>

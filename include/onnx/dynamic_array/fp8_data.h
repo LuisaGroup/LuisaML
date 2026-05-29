@@ -1,5 +1,6 @@
 #pragma once
-#include <luisa/dsl/sugar.h>
+#include "luisa_ml_config.h"
+#include <luisa/core/stl/vector.h>
 #include "onnx/fp_quantized.h"
 
 namespace luisa::compute::dynamic_array {

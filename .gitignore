@@ -228,6 +228,7 @@ tags
 
 ### VisualStudioCode template
 .vscode/*
+!.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/extensions.json
 *.code-workspace

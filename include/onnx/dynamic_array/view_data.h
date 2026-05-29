@@ -1,4 +1,5 @@
 #pragma once
+#include "luisa_ml_config.h"
 #include "local_data.h"
 
 namespace luisa::compute::dynamic_array {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <string_view>
 // NOTE: typeinfo is required for the type-dispatch system. This violates the project's no-RTTI rule.
 #include <typeinfo>

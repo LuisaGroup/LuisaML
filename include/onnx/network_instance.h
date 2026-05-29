@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <memory>
 #include <functional>
 #include <span>
@@ -31,7 +33,7 @@ struct PreparedGraph {
  * intermediate tensor storage. The forward() method executes the
  * model graph using luisa DSL.
  */
-class NetworkInstance {
+class LUISA_ONNX_API NetworkInstance {
 public:
     using TensorRef = std::reference_wrapper<ITensor>;
     using ExternalTensorTable = onnx::StringNodeMap<TensorRef>;

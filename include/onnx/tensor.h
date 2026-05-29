@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <array>
 #include <vector>
 #include <numeric>

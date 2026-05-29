@@ -1,4 +1,5 @@
 #pragma once
+#include "luisa_ml_config.h"
 #include <variant>
 #include "local_data.h"
 #include "buffer_data.h"

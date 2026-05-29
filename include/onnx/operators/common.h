@@ -1,4 +1,5 @@
 #pragma once
+#include "luisa_ml_config.h"
 #include <luisa/dsl/sugar.h>
 #include "onnx/type_dispatch.h"
 #include "onnx/dynamic_array/dynamic_array.h"

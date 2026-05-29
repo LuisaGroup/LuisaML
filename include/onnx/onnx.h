@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <array>
 #include <vector>
 #include <numeric>
@@ -95,7 +97,7 @@ using StringNodeMap = std::unordered_map<std::string, T, StringTransparentHasher
 class Graph;
 class OperatorSet;
 
-class Attribute : public std::variant<float,
+class LUISA_ONNX_API Attribute : public std::variant<float,
                                       int,
                                       std::string,
                                       std::shared_ptr<Graph>,
@@ -158,7 +160,7 @@ public:
     static Attribute from_json(json_cvalue const &json, Graph const *parent = nullptr);
 };
 
-class Variable {
+class LUISA_ONNX_API Variable {
 private:
     std::string name;
     DataType dtype;
@@ -205,7 +207,7 @@ public:
     static Variable from_initializer_json(json_cvalue const &json);
 };
 
-class Node {
+class LUISA_ONNX_API Node {
 private:
     std::string name;
     std::string op_type;
@@ -258,7 +260,7 @@ public:
     }
 };
 
-class Graph {
+class LUISA_ONNX_API Graph {
 private:
     std::string name;
     Graph const *parent_ = nullptr;
@@ -379,7 +381,7 @@ public:
 #endif
 };
 
-class Model {
+class LUISA_ONNX_API Model {
 private:
     int ir_version;
     std::string producer_name;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include "tensor.h"
 
 namespace lcml::onnx {
@@ -8,7 +10,7 @@ class Node;
 class NetworkInstance;
 class TensorTable;
 
-class Operator {
+class LUISA_ONNX_API Operator {
 private:
     std::string name;
 public:

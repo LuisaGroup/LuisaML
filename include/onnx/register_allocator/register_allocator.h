@@ -1,5 +1,7 @@
 #pragma once
 
+#include "luisa_ml_config.h"
+
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -47,7 +49,7 @@ struct RegAllocConfig {
 //   Phase D: Build interference graph
 //   Phase E: Size-aware greedy graph coloring with local search
 //   Phase F: Build allocation plan
-class RegisterAllocator {
+class LUISA_ONNX_API RegisterAllocator {
 public:
     using OperatorList = std::vector<std::unique_ptr<Operator>>;
 
