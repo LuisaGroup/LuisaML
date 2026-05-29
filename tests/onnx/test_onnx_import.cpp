@@ -143,43 +143,37 @@ int main() {
     std::printf("=== ONNX Import Test ===\n");
     std::fflush(stdout);
     
-    try {
-        std::printf("Opset has Gemm: %d\n", (int)OperatorSet::get_default().has_operator("Gemm"));
-        std::fflush(stdout);
-        auto model = Model::load_from_json(k_simple_mlp_json);
-        std::printf("Model loaded successfully.\n");
-        std::fflush(stdout);
-        std::printf("  IR version: %d\n", model.get_ir_version());
-        std::fflush(stdout);
-        std::printf("  Producer: %s\n", model.get_producer_name().c_str());
-        std::fflush(stdout);
-        
-        auto const &graph = model.get_graph();
-        std::printf("  Graph name: %s\n", graph.get_name().c_str());
-        std::fflush(stdout);
-        std::printf("  Inputs: %zu\n", graph.get_inputs().size());
-        std::fflush(stdout);
-        std::printf("  Outputs: %zu\n", graph.get_outputs().size());
-        std::fflush(stdout);
-        std::printf("  Nodes: %zu\n", graph.get_nodes().size());
-        std::fflush(stdout);
-        
-        if (graph.get_nodes().size() != 3) {
-            std::printf("ERROR: Expected 3 nodes, got %zu\n", graph.get_nodes().size());
-            return 1;
-        }
-        
-        std::printf("  Node types: ");
-        for (auto const &node : graph.get_nodes()) {
-            std::printf("%s ", node.get_op_type().c_str());
-        }
-        std::printf("\n");
-        std::fflush(stdout);
-        
-    } catch (std::exception const &e) {
-        std::printf("ERROR loading model: %s\n", e.what());
+    std::printf("Opset has Gemm: %d\n", (int)OperatorSet::get_default().has_operator("Gemm"));
+    std::fflush(stdout);
+    auto model = Model::load_from_json(k_simple_mlp_json);
+    std::printf("Model loaded successfully.\n");
+    std::fflush(stdout);
+    std::printf("  IR version: %d\n", model.get_ir_version());
+    std::fflush(stdout);
+    std::printf("  Producer: %s\n", model.get_producer_name().c_str());
+    std::fflush(stdout);
+    
+    auto const &graph = model.get_graph();
+    std::printf("  Graph name: %s\n", graph.get_name().c_str());
+    std::fflush(stdout);
+    std::printf("  Inputs: %zu\n", graph.get_inputs().size());
+    std::fflush(stdout);
+    std::printf("  Outputs: %zu\n", graph.get_outputs().size());
+    std::fflush(stdout);
+    std::printf("  Nodes: %zu\n", graph.get_nodes().size());
+    std::fflush(stdout);
+    
+    if (graph.get_nodes().size() != 3) {
+        std::printf("ERROR: Expected 3 nodes, got %zu\n", graph.get_nodes().size());
         return 1;
     }
+    
+    std::printf("  Node types: ");
+    for (auto const &node : graph.get_nodes()) {
+        std::printf("%s ", node.get_op_type().c_str());
+    }
+    std::printf("\n");
+    std::fflush(stdout);
     
     // ===================== Shader Compile Test =====================
     std::printf("\n=== Shader Compile Test ===\n");
