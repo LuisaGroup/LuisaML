@@ -1,3 +1,5 @@
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -42,18 +44,18 @@ private:
         }
     }
 public:
-    Unary(std::string name) : Operator(std::move(name)) {}
+    Unary(luisa::string name) : Operator(std::move(name)) {}
 
     /// Element-wise unary ops can safely operate in-place: output[i] = f(input[i]).
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs, std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs, luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Unary operator requires 1 input and 1 output.");
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Input and output must have the same element type.");
         LUISA_ASSERT(input.size() == output.size(),
                      "Input and output must have the same size.");
@@ -61,7 +63,7 @@ public:
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #endif
-        visit_typeid<TypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<TypeList>(input.element_type_index(), [&]<typename T>() {
             apply_to(static_cast<NNTensor<T> &>(input), static_cast<NNTensor<T> &>(output));
         });
     }
@@ -75,7 +77,7 @@ public:
         T apply(T x) const { return expr; }      \
     };                                           \
     REGISTER_TO_DEFAULT_OPSET(Name) {            \
-        return std::make_unique<Name>();         \
+        return luisa::make_unique<Name>();         \
     }
 
 #define DEFINE_UNARY_OP(Name, expr) DEFINE_UNARY_OP_EX(Name, NNTypeList, expr)
@@ -121,8 +123,8 @@ class IsNaN : public Operator {
 public:
     IsNaN() : Operator("IsNaN") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "IsNaN requires 1 input and 1 output.");
@@ -130,13 +132,13 @@ public:
         auto &output = outputs[0].get();
         LUISA_ASSERT(input.size() == output.size(),
                      "IsNaN: input and output must have the same size.");
-        LUISA_ASSERT(output.element_type() == typeid(bool),
+        LUISA_ASSERT(output.element_type_index() == refl::type_index_of<bool>(),
                      "IsNaN: output must be bool type.");
 #else
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #endif
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<bool> &>(output);
             if constexpr (detail::VecDispatch<T>::supported) {
@@ -173,21 +175,21 @@ public:
     }
 };
 REGISTER_TO_DEFAULT_OPSET(IsNaN) {
-    return std::make_unique<IsNaN>();
+    return luisa::make_unique<IsNaN>();
 };
 
 // --- IsInf: float in, bool out ---
 class IsInf : public Operator {
 private:
-    int detect_negative_;
-    int detect_positive_;
+    int32_t detect_negative_;
+    int32_t detect_positive_;
 
 public:
-    IsInf(int detect_negative = 1, int detect_positive = 1)
+    IsInf(int32_t detect_negative = 1, int32_t detect_positive = 1)
         : Operator("IsInf"), detect_negative_(detect_negative), detect_positive_(detect_positive) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "IsInf requires 1 input and 1 output.");
@@ -195,13 +197,13 @@ public:
         auto &output = outputs[0].get();
         LUISA_ASSERT(input.size() == output.size(),
                      "IsInf: input and output must have the same size.");
-        LUISA_ASSERT(output.element_type() == typeid(bool),
+        LUISA_ASSERT(output.element_type_index() == refl::type_index_of<bool>(),
                      "IsInf: output must be bool type.");
 #else
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #endif
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<bool> &>(output);
             auto compute_is_inf = [&](auto val) {
@@ -250,13 +252,13 @@ public:
     }
 };
 REGISTER_TO_DEFAULT_OPSET(IsInf) {
-    int detect_negative = 1;
-    int detect_positive = 1;
+    int32_t detect_negative = 1;
+    int32_t detect_positive = 1;
     if (auto p = node.try_get_attr("detect_negative"))
         detect_negative = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("detect_positive"))
         detect_positive = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<IsInf>(detect_negative, detect_positive);
+    return luisa::make_unique<IsInf>(detect_negative, detect_positive);
 };
 
 }// namespace lcml::onnx

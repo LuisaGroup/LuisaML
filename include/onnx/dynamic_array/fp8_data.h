@@ -1,6 +1,7 @@
 #pragma once
 #include "luisa_ml_config.h"
-#include <luisa/core/stl/vector.h>
+#include <utility>
+#include <type_traits>
 #include "onnx/fp_quantized.h"
 
 namespace luisa::compute::dynamic_array {

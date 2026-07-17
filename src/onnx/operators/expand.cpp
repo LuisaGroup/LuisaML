@@ -1,6 +1,8 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -23,14 +25,14 @@ public:
         return data_var.get_shape() == out_var.get_shape();
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Expand requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "Expand: input and output must have the same element type.");
 
         auto const &in_shape = data.shape();
@@ -39,7 +41,7 @@ public:
 
         // Fast path: same-shape → output is already a view of input (set up by allocator)
         if (in_shape == out_shape) {
-            visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+            visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
                 auto &in = static_cast<NNTensor<T> &>(data);
                 auto &out = static_cast<NNTensor<T> &>(output);
                 // If not already sharing storage, copy
@@ -114,20 +116,20 @@ public:
         }
 
         // Precompute padded input shape and strides for broadcasting
-        std::vector<uint32_t> padded(out_ndim, 1u);
+        luisa::vector<uint32_t> padded(out_ndim, 1u);
         for (size_t i = 0; i < in_shape.size(); ++i)
             padded[out_ndim - in_shape.size() + i] = in_shape[i];
 
-        std::vector<uint32_t> in_stride(out_ndim, 0u);
+        luisa::vector<uint32_t> in_stride(out_ndim, 0u);
         {
             uint32_t acc = 1;
-            for (int i = static_cast<int>(out_ndim) - 1; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(out_ndim) - 1; i >= 0; --i) {
                 in_stride[i] = (padded[i] == 1) ? 0u : acc;
                 acc *= padded[i];
             }
         }
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
 
@@ -168,7 +170,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Expand) {
-    return std::make_unique<Expand>();
+    return luisa::make_unique<Expand>();
 };
 
 }// namespace lcml::onnx

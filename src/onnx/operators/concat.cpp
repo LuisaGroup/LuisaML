@@ -1,6 +1,7 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -13,8 +14,8 @@ private:
 public:
     Concat(int64_t axis) : Operator("Concat"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(!inputs.empty() && outputs.size() == 1,
                      "Concat requires >=1 inputs and 1 output.");
         auto &output = outputs[0].get();
@@ -22,7 +23,7 @@ public:
 
         // Check all inputs and output have same element type
         for (size_t i = 0; i < inputs.size(); ++i) {
-            LUISA_ASSERT(inputs[i].get().element_type() == output.element_type(),
+            LUISA_ASSERT(inputs[i].get().element_type_index() == output.element_type_index(),
                          "Concat: all inputs and output must have the same element type.");
         }
 
@@ -33,7 +34,7 @@ public:
         LUISA_ASSERT(axis >= 0 && axis < static_cast<int64_t>(ndim), "Concat axis out of bounds");
 #endif
 
-        visit_typeid<NNTypeList>(output.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(output.element_type_index(), [&]<typename T>() {
             auto &out = static_cast<NNTensor<T> &>(output);
             auto const &out_shape = out.shape();
             using ST = nn_storage_type_t<T>;
@@ -214,7 +215,7 @@ REGISTER_TO_DEFAULT_OPSET(Concat) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Concat>(axis);
+    return luisa::make_unique<Concat>(axis);
 };
 
 }// namespace lcml::onnx

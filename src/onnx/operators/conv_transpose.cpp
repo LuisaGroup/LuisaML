@@ -1,6 +1,9 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -14,26 +17,26 @@ struct ConvTransposeSupported : std::bool_constant<
 
 class ConvTranspose : public Operator {
 private:
-    std::string auto_pad_;
-    std::vector<int> dilations_;
-    int group_;
-    std::vector<int> kernel_shape_;
-    std::vector<int> output_padding_;
-    std::vector<int> pads_;
-    std::vector<int> strides_;
+    luisa::string auto_pad_;
+    luisa::vector<int32_t> dilations_;
+    int32_t group_;
+    luisa::vector<int32_t> kernel_shape_;
+    luisa::vector<int32_t> output_padding_;
+    luisa::vector<int32_t> pads_;
+    luisa::vector<int32_t> strides_;
 
 public:
-    ConvTranspose(std::string auto_pad, std::vector<int> dilations, int group,
-                  std::vector<int> kernel_shape, std::vector<int> output_padding,
-                  std::vector<int> pads, std::vector<int> strides)
+    ConvTranspose(luisa::string auto_pad, luisa::vector<int32_t> dilations, int32_t group,
+                  luisa::vector<int32_t> kernel_shape, luisa::vector<int32_t> output_padding,
+                  luisa::vector<int32_t> pads, luisa::vector<int32_t> strides)
         : Operator("ConvTranspose"), auto_pad_(std::move(auto_pad)),
           dilations_(std::move(dilations)), group_(group),
           kernel_shape_(std::move(kernel_shape)),
           output_padding_(std::move(output_padding)),
           pads_(std::move(pads)), strides_(std::move(strides)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 2 && inputs.size() <= 3 && outputs.size() == 1,
                      "ConvTranspose requires 2-3 inputs and 1 output.");
@@ -52,9 +55,9 @@ public:
         LUISA_ASSERT(spatial_dims == 2, "ConvTranspose: only 2D transposed convolution is supported.");
 #endif
 
-        std::vector<int> dilations = dilations_;
-        std::vector<int> strides = strides_;
-        std::vector<int> pads = pads_;
+        luisa::vector<int32_t> dilations = dilations_;
+        luisa::vector<int32_t> strides = strides_;
+        luisa::vector<int32_t> pads = pads_;
         if (dilations.empty()) dilations.assign(spatial_dims, 1);
         if (strides.empty()) strides.assign(spatial_dims, 1);
         if (pads.empty()) pads.assign(spatial_dims * 2, 0);
@@ -66,7 +69,7 @@ public:
         uint32_t C_per_group = C / group;
         uint32_t M_per_group = M / group;
 
-        visit_typeid<NNFilteredTypeList<ConvTransposeSupported>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<ConvTransposeSupported>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             using CT = std::conditional_t<
                 std::is_same_v<T, FP4E2M1> || std::is_same_v<T, FP8E4M3FN> ||
@@ -121,9 +124,9 @@ public:
             uint32_t iH = x_shape[2], iW = x_shape[3];
             uint32_t kH = w_shape[2], kW = w_shape[3];
             uint32_t oH = y_shape[2], oW = y_shape[3];
-            int sH = strides[0], sW = strides[1];
-            int dH = dilations[0], dW = dilations[1];
-            int pH = pads[0], pW = pads[1];
+            int32_t sH = strides[0], sW = strides[1];
+            int32_t dH = dilations[0], dW = dilations[1];
+            int32_t pH = pads[0], pW = pads[1];
 
             auto x_stride_n = x.strides()[0];
             auto x_stride_c = x.strides()[1];
@@ -280,9 +283,9 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(ConvTranspose) {
-    std::string auto_pad = "NOTSET";
-    std::vector<int> dilations, kernel_shape, output_padding, pads, strides;
-    int group = 1;
+    luisa::string auto_pad = "NOTSET";
+    luisa::vector<int32_t> dilations, kernel_shape, output_padding, pads, strides;
+    int32_t group = 1;
     if (auto p = node.try_get_attr("auto_pad"))
         auto_pad = p->get<onnx::AttributeType::STRING>();
     if (auto p = node.try_get_attr("dilations"))
@@ -297,7 +300,7 @@ REGISTER_TO_DEFAULT_OPSET(ConvTranspose) {
         pads = p->get<onnx::AttributeType::INTS>();
     if (auto p = node.try_get_attr("strides"))
         strides = p->get<onnx::AttributeType::INTS>();
-    return std::make_unique<ConvTranspose>(std::move(auto_pad), std::move(dilations), group,
+    return luisa::make_unique<ConvTranspose>(std::move(auto_pad), std::move(dilations), group,
                                            std::move(kernel_shape), std::move(output_padding),
                                            std::move(pads), std::move(strides));
 };

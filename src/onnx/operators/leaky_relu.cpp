@@ -2,6 +2,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 template<typename T>
@@ -24,20 +26,20 @@ public:
     /// Element-wise activation: safe for in-place.
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1, "LeakyRelu requires 1 input and 1 output.");
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
-        LUISA_ASSERT(input.element_type() == output.element_type(), "LeakyRelu: input and output must have the same element type.");
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(), "LeakyRelu: input and output must have the same element type.");
         LUISA_ASSERT(input.size() == output.size(), "LeakyRelu: input and output must have the same size.");
 #else
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #endif
 
-        visit_typeid<NNFilteredTypeList<LeakyReluSupported>>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<LeakyReluSupported>>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             if constexpr (std::is_same_v<T, FP4E2M1> || std::is_same_v<T, FP8E4M3FN> || std::is_same_v<T, FP8E5M2>) {
@@ -109,7 +111,7 @@ REGISTER_TO_DEFAULT_OPSET(LeakyRelu) {
     float alpha = 0.01f;
     if (auto p = node.try_get_attr("alpha"))
         alpha = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<LeakyRelu>(alpha);
+    return luisa::make_unique<LeakyRelu>(alpha);
 };
 
 }// namespace lcml::onnx

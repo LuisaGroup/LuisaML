@@ -2,6 +2,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 namespace {
@@ -72,8 +74,8 @@ private:
 public:
     BatchNormalization(float epsilon) : Operator("BatchNormalization"), epsilon_(epsilon) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 5 && outputs.size() >= 1,
                      "BatchNormalization requires 5 inputs and >=1 output.");
@@ -91,7 +93,7 @@ public:
         for (size_t i = 2; i < x_shape.size(); ++i)
             spatial_size *= x_shape[i];
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &scale = static_cast<NNTensor<T> &>(inputs[1].get());
@@ -161,7 +163,7 @@ REGISTER_TO_DEFAULT_OPSET(BatchNormalization) {
     float epsilon = 1e-5f;
     if (auto p = node.try_get_attr("epsilon"))
         epsilon = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<BatchNormalization>(epsilon);
+    return luisa::make_unique<BatchNormalization>(epsilon);
 };
 
 // InstanceNormalization: y = scale * (x - mean) / sqrt(var + epsilon) + B
@@ -174,8 +176,8 @@ private:
 public:
     InstanceNormalization(float epsilon) : Operator("InstanceNormalization"), epsilon_(epsilon) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1,
                      "InstanceNormalization requires 3 inputs and 1 output.");
@@ -193,7 +195,7 @@ public:
         for (size_t i = 2; i < x_shape.size(); ++i)
             spatial_size *= x_shape[i];
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &scale = static_cast<NNTensor<T> &>(inputs[1].get());
@@ -325,7 +327,7 @@ REGISTER_TO_DEFAULT_OPSET(InstanceNormalization) {
     float epsilon = 1e-5f;
     if (auto p = node.try_get_attr("epsilon"))
         epsilon = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<InstanceNormalization>(epsilon);
+    return luisa::make_unique<InstanceNormalization>(epsilon);
 };
 
 // LayerNormalization: normalizes over the last N dimensions.
@@ -339,8 +341,8 @@ public:
     LayerNormalization(int64_t axis, float epsilon)
         : Operator("LayerNormalization"), axis_(axis), epsilon_(epsilon) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 2 && outputs.size() >= 1,
                      "LayerNormalization requires >=2 inputs and >=1 output.");
@@ -363,7 +365,7 @@ public:
 
         ITensor *B_ptr = (inputs.size() >= 3) ? &inputs[2].get() : nullptr;
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &scale = static_cast<NNTensor<T> &>(inputs[1].get());
@@ -539,7 +541,7 @@ REGISTER_TO_DEFAULT_OPSET(LayerNormalization) {
         axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("epsilon"))
         epsilon = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<LayerNormalization>(axis, epsilon);
+    return luisa::make_unique<LayerNormalization>(axis, epsilon);
 };
 
 // GroupNormalization: divides channels into groups, normalizes within each group.
@@ -553,8 +555,8 @@ public:
     GroupNormalization(float epsilon, int64_t num_groups)
         : Operator("GroupNormalization"), epsilon_(epsilon), num_groups_(num_groups) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1,
                      "GroupNormalization requires 3 inputs and 1 output.");
@@ -580,7 +582,7 @@ public:
         uint32_t channels_per_group = C / num_groups;
         uint32_t group_size = channels_per_group * spatial_size;
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &scale = static_cast<NNTensor<T> &>(inputs[1].get());
@@ -723,7 +725,7 @@ REGISTER_TO_DEFAULT_OPSET(GroupNormalization) {
         epsilon = p->get<onnx::AttributeType::FLOAT>();
     if (auto p = node.try_get_attr("num_groups"))
         num_groups = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<GroupNormalization>(epsilon, num_groups);
+    return luisa::make_unique<GroupNormalization>(epsilon, num_groups);
 };
 
 }// namespace lcml::onnx

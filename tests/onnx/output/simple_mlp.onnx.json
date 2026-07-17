@@ -1,0 +1,422 @@
+{
+  "ir_version": "10",
+  "producer_name": "pytorch",
+  "producer_version": "2.11.0+cpu",
+  "graph": {
+    "node": [
+      {
+        "input": [
+          "input",
+          "net.0.weight",
+          "net.0.bias"
+        ],
+        "output": [
+          "linear"
+        ],
+        "name": "node_linear",
+        "op_type": "Gemm",
+        "attribute": [
+          {
+            "name": "transA",
+            "i": "0",
+            "type": "INT"
+          },
+          {
+            "name": "transB",
+            "i": "1",
+            "type": "INT"
+          },
+          {
+            "name": "alpha",
+            "f": 1.0,
+            "type": "FLOAT"
+          },
+          {
+            "name": "beta",
+            "f": 1.0,
+            "type": "FLOAT"
+          }
+        ]
+      },
+      {
+        "input": [
+          "linear"
+        ],
+        "output": [
+          "relu"
+        ],
+        "name": "node_relu",
+        "op_type": "Relu"
+      },
+      {
+        "input": [
+          "relu",
+          "net.2.weight",
+          "net.2.bias"
+        ],
+        "output": [
+          "linear_1"
+        ],
+        "name": "node_linear_1",
+        "op_type": "Gemm",
+        "attribute": [
+          {
+            "name": "transA",
+            "i": "0",
+            "type": "INT"
+          },
+          {
+            "name": "transB",
+            "i": "1",
+            "type": "INT"
+          },
+          {
+            "name": "alpha",
+            "f": 1.0,
+            "type": "FLOAT"
+          },
+          {
+            "name": "beta",
+            "f": 1.0,
+            "type": "FLOAT"
+          }
+        ]
+      },
+      {
+        "input": [
+          "linear_1"
+        ],
+        "output": [
+          "relu_1"
+        ],
+        "name": "node_relu_1",
+        "op_type": "Relu"
+      },
+      {
+        "input": [
+          "relu_1",
+          "net.4.weight",
+          "net.4.bias"
+        ],
+        "output": [
+          "output"
+        ],
+        "name": "node_linear_2",
+        "op_type": "Gemm",
+        "attribute": [
+          {
+            "name": "transA",
+            "i": "0",
+            "type": "INT"
+          },
+          {
+            "name": "transB",
+            "i": "1",
+            "type": "INT"
+          },
+          {
+            "name": "alpha",
+            "f": 1.0,
+            "type": "FLOAT"
+          },
+          {
+            "name": "beta",
+            "f": 1.0,
+            "type": "FLOAT"
+          }
+        ]
+      }
+    ],
+    "name": "main_graph",
+    "initializer": [
+      {
+        "dims": [
+          "256"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.0.bias",
+        "data_offsets": [
+          0,
+          1024
+        ]
+      },
+      {
+        "dims": [
+          "256"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.2.bias",
+        "data_offsets": [
+          803840,
+          804864
+        ]
+      },
+      {
+        "dims": [
+          "10"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.4.bias",
+        "data_offsets": [
+          1067008,
+          1067048
+        ]
+      },
+      {
+        "dims": [
+          "256",
+          "784"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.0.weight",
+        "data_offsets": [
+          1024,
+          803840
+        ]
+      },
+      {
+        "dims": [
+          "256",
+          "256"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.2.weight",
+        "data_offsets": [
+          804864,
+          1067008
+        ]
+      },
+      {
+        "dims": [
+          "10",
+          "256"
+        ],
+        "data_type": "FLOAT",
+        "name": "net.4.weight",
+        "data_offsets": [
+          1067048,
+          1077288
+        ]
+      }
+    ],
+    "input": [
+      {
+        "name": "input",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "784"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "output": [
+      {
+        "name": "output",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "10"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "value_info": [
+      {
+        "name": "net.0.bias",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "net.2.bias",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "net.4.bias",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "10"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "net.0.weight",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "256"
+                },
+                {
+                  "dim_value": "784"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "net.2.weight",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "256"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "net.4.weight",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "10"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "linear",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "relu",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "linear_1",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "relu_1",
+        "type": {
+          "tensor_type": {
+            "elem_type": "FLOAT",
+            "shape": {
+              "dim": [
+                {
+                  "dim_value": "1"
+                },
+                {
+                  "dim_value": "256"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  "opset_import": [
+    {
+      "domain": "",
+      "version": "14"
+    }
+  ]
+}

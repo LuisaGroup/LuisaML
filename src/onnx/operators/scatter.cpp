@@ -1,3 +1,5 @@
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -106,13 +108,13 @@ private:
     Reduction reduction_;
 
 public:
-    ScatterElements(int64_t axis, Reduction reduction, std::string name = "ScatterElements")
+    ScatterElements(int64_t axis, Reduction reduction, luisa::string name = "ScatterElements")
         : Operator(std::move(name)), axis_(axis), reduction_(reduction) {}
 
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1, "ScatterElements requires 3 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &indices = inputs[1].get();
@@ -121,14 +123,14 @@ public:
         auto ndim = data.ndim();
         int64_t axis = axis_ < 0 ? axis_ + ndim : axis_;
 
-        LUISA_ASSERT(data.element_type() == updates.element_type() && data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == updates.element_type_index() && data.element_type_index() == output.element_type_index(),
                      "ScatterElements: data, updates and output must have the same element type.");
-        LUISA_ASSERT(indices.element_type() == typeid(int) || indices.element_type() == typeid(slong),
+        LUISA_ASSERT(indices.element_type_index() == refl::type_index_of<int32_t>() || indices.element_type_index() == refl::type_index_of<slong>(),
                      "ScatterElements: indices must be int or int64 type.");
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &idx = static_cast<NNTensor<int> &>(indices);
+            auto &idx = static_cast<NNTensor<int32_t> &>(indices);
             auto &upd = static_cast<NNTensor<T> &>(updates);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = typename NNTensor<T>::value_type;
@@ -167,7 +169,7 @@ public:
                 if (!indices.is_constant()) return false;
                 if (indices.size() > 128) return false;// avoid excessive unrolling
 
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
                 auto const &cpu_idx = idx_const.const_data();
                 auto const &idx_shape = indices.shape();
 
@@ -183,8 +185,8 @@ public:
                         uint32_t coord = remaining / idx.strides()[d];
                         remaining = remaining % idx.strides()[d];
                         if (d == static_cast<uint32_t>(axis)) {
-                            int idx_val = static_cast<int>(cpu_idx[linear_idx]);
-                            if (idx_val < 0) idx_val += static_cast<int>(data.shape()[d]);
+                            int32_t idx_val = static_cast<int32_t>(cpu_idx[linear_idx]);
+                            if (idx_val < 0) idx_val += static_cast<int32_t>(data.shape()[d]);
                             out_linear += static_cast<uint32_t>(idx_val) * out.strides()[d];
                         } else {
                             out_linear += coord * out.strides()[d];
@@ -239,7 +241,7 @@ REGISTER_TO_DEFAULT_OPSET(ScatterElements) {
         axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("reduction"))
         reduction = parse_reduction(p->get<onnx::AttributeType::STRING>());
-    return std::make_unique<ScatterElements>(axis, reduction);
+    return luisa::make_unique<ScatterElements>(axis, reduction);
 };
 
 // Scatter (deprecated alias for ScatterElements)
@@ -247,7 +249,7 @@ REGISTER_TO_DEFAULT_OPSET(Scatter) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<ScatterElements>(axis, Reduction::NONE, "Scatter");
+    return luisa::make_unique<ScatterElements>(axis, Reduction::NONE, "Scatter");
 };
 
 // ScatterND: scatter updates into data at positions specified by N-d indices.
@@ -261,8 +263,8 @@ public:
 
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1, "ScatterND requires 3 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &indices = inputs[1].get();
@@ -274,14 +276,14 @@ public:
         auto last_idx_dim = idx_shape[idx_ndim - 1];
         auto data_ndim = data.ndim();
 
-        LUISA_ASSERT(data.element_type() == updates.element_type() && data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == updates.element_type_index() && data.element_type_index() == output.element_type_index(),
                      "ScatterND: data, updates and output must have the same element type.");
-        LUISA_ASSERT(indices.element_type() == typeid(int) || indices.element_type() == typeid(slong),
+        LUISA_ASSERT(indices.element_type_index() == refl::type_index_of<int32_t>() || indices.element_type_index() == refl::type_index_of<slong>(),
                      "ScatterND: indices must be int or int64 type.");
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &idx = static_cast<NNTensor<int> &>(indices);
+            auto &idx = static_cast<NNTensor<int32_t> &>(indices);
             auto &upd = static_cast<NNTensor<T> &>(updates);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = typename NNTensor<T>::value_type;
@@ -323,16 +325,16 @@ public:
                 // last_idx_dim must be 1 for simple row-level scatter
                 if (last_idx_dim != 1) return false;
 
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
                 auto const &cpu_idx = idx_const.const_data();
                 auto num_indices = upd.shape()[0];// number of scatter rows
 
                 // Verify indices are [S, S+1, S+2, ..., S+N-1] for some S >= 0
                 if (num_indices == 0) return false;
-                int start_val = cpu_idx[0];
+                int32_t start_val = cpu_idx[0];
                 if (start_val < 0) return false;
                 for (uint32_t i = 1; i < num_indices; ++i) {
-                    if (cpu_idx[i] != start_val + static_cast<int>(i)) {
+                    if (cpu_idx[i] != start_val + static_cast<int32_t>(i)) {
                         return false;
                     }
                 }
@@ -437,7 +439,7 @@ REGISTER_TO_DEFAULT_OPSET(ScatterND) {
     Reduction reduction = Reduction::NONE;
     if (auto p = node.try_get_attr("reduction"))
         reduction = parse_reduction(p->get<onnx::AttributeType::STRING>());
-    return std::make_unique<ScatterND>(reduction);
+    return luisa::make_unique<ScatterND>(reduction);
 };
 
 }// namespace lcml::onnx

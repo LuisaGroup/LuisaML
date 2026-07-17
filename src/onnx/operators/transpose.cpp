@@ -1,3 +1,5 @@
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -8,10 +10,10 @@ namespace lcml::onnx {
 // ONNX spec: attribute perm (list of ints). Default: reverse of input dims.
 class Transpose : public Operator {
 private:
-    std::vector<int> perm_;
+    luisa::vector<int32_t> perm_;
 
 public:
-    Transpose(std::vector<int> perm) : Operator("Transpose"), perm_(std::move(perm)) {}
+    Transpose(luisa::vector<int32_t> perm) : Operator("Transpose"), perm_(std::move(perm)) {}
 
     /// Transpose is a view when either:
     /// 1. The permutation is identity, OR
@@ -23,7 +25,7 @@ public:
         if (!perm_.empty()) {
             bool identity = true;
             for (size_t i = 0; i < perm_.size(); ++i) {
-                if (perm_[i] != static_cast<int>(i)) {
+                if (perm_[i] != static_cast<int32_t>(i)) {
                     identity = false;
                     break;
                 }
@@ -42,8 +44,8 @@ public:
         return false;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Transpose requires 1 input and 1 output.");
@@ -51,7 +53,7 @@ public:
         auto &output = outputs[0].get();
 
         auto ndim = input.ndim();
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Transpose: input and output must have the same element type.");
 #else
         auto &input = inputs[0].get();
@@ -60,7 +62,7 @@ public:
 #endif
 
         // Resolve perm: if empty, reverse
-        std::vector<int> perm = perm_;
+        luisa::vector<int32_t> perm = perm_;
         if (perm.empty()) {
             perm.resize(ndim);
             for (uint32_t i = 0; i < ndim; ++i) perm[i] = ndim - 1 - i;
@@ -72,7 +74,7 @@ public:
                      "Transpose: perm size ({}) must match tensor ndim ({}).",
                      perm.size(), ndim);
         {
-            std::vector<bool> seen(ndim, false);
+            luisa::vector<bool> seen(ndim, false);
             for (auto p : perm) {
                 LUISA_ASSERT(p >= 0 && static_cast<uint32_t>(p) < ndim,
                              "Transpose: perm value {} out of bounds [0, {}).",
@@ -87,11 +89,11 @@ public:
         // Fast path: effectively 1-D tensor or identity permutation -> direct copy
         bool is_identity = is_effectively_1d(output.shape(), ndim);
         for (uint32_t i = 0; !is_identity && i < ndim; ++i) {
-            if (perm[i] != static_cast<int>(i)) break;
+            if (perm[i] != static_cast<int32_t>(i)) break;
             if (i == ndim - 1) is_identity = true;
         }
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             if (is_identity) {
@@ -196,10 +198,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Transpose) {
-    std::vector<int> perm;
+    luisa::vector<int32_t> perm;
     if (auto p = node.try_get_attr("perm"))
         perm = p->get<onnx::AttributeType::INTS>();
-    return std::make_unique<Transpose>(std::move(perm));
+    return luisa::make_unique<Transpose>(std::move(perm));
 };
 
 }// namespace lcml::onnx

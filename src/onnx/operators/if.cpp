@@ -3,18 +3,21 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/vector.h>
+
 namespace lcml::onnx {
 
 class If : public Operator {
 private:
-    std::shared_ptr<onnx::Graph> then_branch_;
-    std::shared_ptr<onnx::Graph> else_branch_;
+    luisa::shared_ptr<onnx::Graph> then_branch_;
+    luisa::shared_ptr<onnx::Graph> else_branch_;
     NetworkInstance *env_ = nullptr;
     TensorTable *curr_table = nullptr;
 
 public:
-    If(std::shared_ptr<onnx::Graph> then_branch,
-       std::shared_ptr<onnx::Graph> else_branch)
+    If(luisa::shared_ptr<onnx::Graph> then_branch,
+       luisa::shared_ptr<onnx::Graph> else_branch)
         : Operator("If"),
           then_branch_(std::move(then_branch)),
           else_branch_(std::move(else_branch)) {}
@@ -26,13 +29,13 @@ public:
         curr_table = &table;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         auto &cond_tensor = inputs[0].get();
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1, "If operator requires exactly 1 input (cond).");
         LUISA_ASSERT(env_ != nullptr, "If operator: NetworkInstance environment not set.");
-        LUISA_ASSERT(cond_tensor.element_type() == typeid(bool), "If operator: cond must be a bool tensor.");
+        LUISA_ASSERT(cond_tensor.element_type_index() == refl::type_index_of<bool>(), "If operator: cond must be a bool tensor.");
         LUISA_ASSERT(cond_tensor.size() == 1, "If operator: cond must be a scalar (single element).");
 
         // Validate both branches have the correct output count
@@ -45,7 +48,7 @@ public:
         // Collect dead parent phantom storages that can be safely reused by subgraphs.
         // A phantom storage is "dead" when ALL its member tensors' last-use indices
         // are < the current virtual execution index (i.e. no longer needed by parent).
-        std::vector<ITensor *> reusable_storages;
+        luisa::vector<ITensor *> reusable_storages;
         auto const &ctx = env_->execution_context();
         if (ctx.tensor_table && ctx.plan && ctx.last_use_map) {
             reusable_storages = NetworkInstance::collect_dead_parent_storages(
@@ -56,10 +59,10 @@ public:
         // Since then_branch and else_branch are mutually exclusive ($if/$else),
         // their intermediate tensors can safely reuse the same storage arrays,
         // reducing total register pressure.
-        std::vector<std::reference_wrapper<ITensor>> out_refs(outputs.begin(), outputs.end());
-        std::vector<std::pair<onnx::Graph const *, std::span<std::reference_wrapper<ITensor>>>> branch_infos{
-            {then_branch_.get(), std::span{out_refs}},
-            {else_branch_.get(), std::span{out_refs}},
+        luisa::vector<std::reference_wrapper<ITensor>> out_refs(outputs.begin(), outputs.end());
+        luisa::vector<std::pair<onnx::Graph const *, luisa::span<std::reference_wrapper<ITensor>>>> branch_infos{
+            {then_branch_.get(), luisa::span{out_refs}},
+            {else_branch_.get(), luisa::span{out_refs}},
         };
         auto prepared = env_->prepare_exclusive_graphs(curr_table, branch_infos, reusable_storages);
 
@@ -86,7 +89,7 @@ REGISTER_TO_DEFAULT_OPSET(If) {
     auto then_graph = then_attr.get<onnx::AttributeType::GRAPH>();
     auto else_graph = else_attr.get<onnx::AttributeType::GRAPH>();
 
-    return std::make_unique<If>(std::move(then_graph), std::move(else_graph));
+    return luisa::make_unique<If>(std::move(then_graph), std::move(else_graph));
 };
 
 }// namespace lcml::onnx

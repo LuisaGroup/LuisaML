@@ -1,19 +1,38 @@
 #include "onnx/network_instance.h"
 #include "onnx/register_allocator/register_allocator.h"
 #include "luisa/ast/function_builder.h"
-#include <unordered_set>
+
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/unordered_map.h>
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/functional.h>
+#include <luisa/core/stl/sstream.h>
+#include <luisa/core/stl/format.h>
 
 namespace lcml::onnx {
 using namespace luisa::compute;
 
-static ITensor::shape_type to_tensor_shape(std::vector<size_t> const &shape) {
+/// Sanitize a name so it is a valid identifier in generated shader code.
+/// Replaces characters that are invalid in HLSL/GLSL/C identifiers with '_'.
+static luisa::string sanitize_name(std::string_view name) {
+    luisa::string result{name};
+    for (auto &c : result) {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) {
+            c = '_';
+        }
+    }
+    return result;
+}
+
+static ITensor::shape_type to_tensor_shape(luisa::vector<size_t> const &shape) {
     ITensor::shape_type result;
     result.reserve(shape.size());
     for (auto s : shape) { result.push_back(static_cast<ITensor::size_type>(s)); }
     return result;
 }
 
-size_t NetworkInstance::compute_num_elements(std::vector<size_t> const &shape) {
+size_t NetworkInstance::compute_num_elements(luisa::vector<size_t> const &shape) {
     if (shape.empty()) return 0;
     return std::accumulate(shape.begin(), shape.end(), size_t{1}, std::multiplies<>{});
 }
@@ -26,11 +45,11 @@ void NetworkInstance::validate_and_bind(
 
     auto const &name = var.get_name();
 
-    // Validate element type (typeid) matches
-    auto const &expected_typeid = onnx_dtype_to_typeid(var.get_dtype());
-    LUISA_ASSERT(ext_tensor.element_type() == expected_typeid,
+    // Validate element type (type index) matches
+    auto expected_type_idx = onnx_dtype_to_type_index(var.get_dtype());
+    LUISA_ASSERT(ext_tensor.element_type_index() == expected_type_idx,
                  "{} '{}' element type mismatch: expected {}, got {}",
-                 role, name, expected_typeid.name(), ext_tensor.element_type().name());
+                 role, name, onnx_dtype_to_type_name(var.get_dtype()), ext_tensor.element_type_name());
 
     // Validate shape matches
     auto const &expected_shape = var.get_shape();
@@ -43,7 +62,7 @@ void NetworkInstance::validate_and_bind(
                      "{} '{}' shape mismatch at dim {}: expected {}, got {}",
                      role, name, d, expected_shape[d], actual_shape[d]);
     }
-    ext_tensor.set_name(std::string{role} + "_" + name);
+    ext_tensor.set_name(sanitize_name(luisa::string{role} + "_" + name));
 
     // Bind as borrowed reference in tensor table
     tensor_table.bind(name, ext_tensor);
@@ -52,14 +71,12 @@ void NetworkInstance::validate_and_bind(
 void NetworkInstance::bind_external_tensors(
     TensorTable &tensor_table,
     onnx::Graph const &graph) {
-
     for (auto const &var_ref : graph.get_inputs()) {
         auto const &var = var_ref.get();
         if (auto it = inputs_.find(var.get_name()); it != inputs_.end()) {
             validate_and_bind(tensor_table, "Input", var, it->second.get());
         }
     }
-
     for (auto const &var_ref : graph.get_outputs()) {
         auto const &var = var_ref.get();
         if (auto it = outputs_.find(var.get_name()); it != outputs_.end()) {
@@ -70,10 +87,10 @@ void NetworkInstance::bind_external_tensors(
 inline std::string_view onnx_dtype_to_string(onnx::DataType dt) {
     return magic_enum::enum_name(dt);
 }
-static std::string format_node_info_markdown(
+static luisa::string format_node_info_markdown(
     const onnx::Graph &graph,
     size_t total_nodes) {
-    std::ostringstream oss;
+    luisa::ostringstream oss;
     auto const &nodes = graph.get_nodes();
 
     // Header
@@ -96,29 +113,29 @@ static std::string format_node_info_markdown(
         auto const &node = nodes[i];
 
         // Format inputs
-        std::string inputs_str;
+        luisa::string inputs_str;
         bool first_input = true;
         for (auto const &in_var : node.get_inputs()) {
             if (!first_input) inputs_str += ", ";
-            inputs_str += std::string(in_var.get().get_name());
+            inputs_str += luisa::string(in_var.get().get_name());
             first_input = false;
         }
         if (inputs_str.empty()) inputs_str = "(none)";
 
         // Format outputs
-        std::string outputs_str;
+        luisa::string outputs_str;
         bool first_output = true;
         for (auto const &out_var : node.get_outputs()) {
             if (!first_output) outputs_str += ", ";
-            outputs_str += std::string(out_var.get().get_name());
+            outputs_str += luisa::string(out_var.get().get_name());
             first_output = false;
         }
         if (outputs_str.empty()) outputs_str = "(none)";
 
         // Escape pipe characters for markdown table
-        auto escape_pipes = [](std::string &s) {
+        auto escape_pipes = [](luisa::string &s) {
             size_t pos = 0;
-            while ((pos = s.find('|', pos)) != std::string::npos) {
+            while ((pos = s.find('|', pos)) != luisa::string::npos) {
                 s.replace(pos, 1, "\\|");
                 pos += 2;
             }
@@ -134,11 +151,11 @@ static std::string format_node_info_markdown(
     return oss.str();
 }
 
-static std::string format_node_execution_markdown(
+static luisa::string format_node_execution_markdown(
     const onnx::Node &node,
     size_t node_idx,
     size_t total_nodes) {
-    std::ostringstream oss;
+    luisa::ostringstream oss;
 
     oss << "\n";
     oss << "### Node [" << node_idx << "/" << (total_nodes - 1) << "]: "
@@ -192,7 +209,7 @@ void NetworkInstance::create_tensor_for_var(
     auto tensor_shape = to_tensor_shape(shape);
 
     visit_onnx_dtype(var.get_dtype(), [&]<typename T>() {
-        std::unique_ptr<NNTensor<T>> tensor;
+        luisa::unique_ptr<NNTensor<T>> tensor;
 
         // Fill weight data from ByteBuffer (external safetensors file)
         if (var.is_trainable_weight()) {
@@ -209,7 +226,7 @@ void NetworkInstance::create_tensor_for_var(
                 LUISA_ASSERT(buf_end - buf_start == num_elements * sizeof(T),
                              "Weight buffer size mismatch for variable: {}", name);
             }
-            tensor = std::make_unique<NNTensor<T>>(
+            tensor = luisa::make_unique<NNTensor<T>>(
                 std::move(tensor_shape),
                 typename NNTensor<T>::container_type{num_elements, weight_buffer_, buf_start});
         }
@@ -218,7 +235,7 @@ void NetworkInstance::create_tensor_for_var(
             // Build CPU-side vector for constant tensors
             using BkT = typename NNTensor<T>::value_type;
             using DtT = typename NNConstTensor<T>::storage_type;
-            std::vector<DtT> cpu_vec;
+            luisa::vector<DtT> cpu_vec;
             bool has_raw = !var.get_raw_data().empty();
             if (has_raw) {
                 cpu_vec.resize(num_elements);
@@ -282,19 +299,19 @@ void NetworkInstance::create_tensor_for_var(
                 BkT scalar_val = num_elements >= 1u ? static_cast<BkT>(cpu_vec[0]) : BkT{};
                 auto container = typename NNTensor<T>::container_type{
                     typename NNTensor<T>::container_type::scalar_tag_t{}, scalar_val, num_elements};
-                tensor = std::make_unique<NNConstTensor<T>>(
+                tensor = luisa::make_unique<NNConstTensor<T>>(
                     std::move(tensor_shape), std::move(container), std::move(cpu_vec));
             } else if (seq_kind == SeqKind::Linear) {
                 BkT start_val = static_cast<BkT>(cpu_vec[0]);
                 auto container = typename NNTensor<T>::container_type{
                     typename NNTensor<T>::container_type::linear_tag_t{}, start_val, seq_delta, num_elements};
-                tensor = std::make_unique<NNConstTensor<T>>(
+                tensor = luisa::make_unique<NNConstTensor<T>>(
                     std::move(tensor_shape), std::move(container), std::move(cpu_vec));
             } else {
                 auto container = typename NNTensor<T>::container_type{num_elements};
                 // Write to GPU container
                 if (has_raw) {
-                    for (uint i = 0; i < (uint)num_elements; ++i) {
+                    for (uint32_t i = 0; i < static_cast<uint32_t>(num_elements); ++i) {
                         if constexpr (std::is_same_v<BkT, FP16Quantized>) {
                             container[i].bits = def(cpu_vec[i].bits);
                         } else if constexpr (requires(BkT x) { x.bits; }) {
@@ -305,18 +322,18 @@ void NetworkInstance::create_tensor_for_var(
                     }
                 }
                 if (var.is_constant() && has_raw) {
-                    tensor = std::make_unique<NNConstTensor<T>>(
+                    tensor = luisa::make_unique<NNConstTensor<T>>(
                         std::move(tensor_shape), std::move(container), std::move(cpu_vec));
                 } else {
-                    tensor = std::make_unique<NNTensor<T>>(
+                    tensor = luisa::make_unique<NNTensor<T>>(
                         std::move(tensor_shape), std::move(container));
                 }
             }
         }
         if (var.is_constant()) {
-            tensor->set_name("CONST_" + name);
+            tensor->set_name(sanitize_name("CONST_" + name));
         } else {
-            tensor->set_name(name);
+            tensor->set_name(sanitize_name(name));
         }
 
         // Transfer ownership to tensor table
@@ -383,9 +400,9 @@ LastUseMap NetworkInstance::build_last_use_map(
     // their last_use to the node index that owns the subgraph.
     {
         // Recursively collect external variable references from a subgraph.
-        std::function<void(onnx::Graph const &, std::unordered_set<std::string> &)> collect_external_refs;
+        luisa::function<void(onnx::Graph const &, luisa::unordered_set<luisa::string> &)> collect_external_refs;
         collect_external_refs = [&](onnx::Graph const &sub_graph,
-                                    std::unordered_set<std::string> &ext_refs) {
+                                    luisa::unordered_set<luisa::string> &ext_refs) {
             auto const &local_vars = sub_graph.get_variables();
             for (auto const &sub_node : sub_graph.get_nodes()) {
                 for (auto const &in_var : sub_node.get_inputs()) {
@@ -412,7 +429,7 @@ LastUseMap NetworkInstance::build_last_use_map(
         for (size_t i = 0; i < nodes.size(); ++i) {
             for (auto const &[attr_name, attr] : nodes[i].get_attributes()) {
                 auto attr_type = onnx::Attribute::type_of(attr);
-                std::unordered_set<std::string> ext_refs;
+                luisa::unordered_set<luisa::string> ext_refs;
                 if (attr_type == onnx::AttributeType::GRAPH) {
                     collect_external_refs(*attr.get<onnx::AttributeType::GRAPH>(), ext_refs);
                 } else if (attr_type == onnx::AttributeType::GRAPHS) {
@@ -461,8 +478,8 @@ AllocationPlan NetworkInstance::create_intermediate_tensors_pooled(
     onnx::Graph const &graph,
     LastUseMap const &last_use_map,
     OperatorList const &ops,
-    std::vector<ExternalSlot> external_slots,
-    std::vector<ITensor *> external_storages) {
+    luisa::vector<ExternalSlot> external_slots,
+    luisa::vector<ITensor *> external_storages) {
 
     // First, create all constants and weights (they are never pooled)
     for (auto const &[name, var] : graph.get_variables()) {
@@ -489,9 +506,9 @@ AllocationPlan NetworkInstance::create_intermediate_tensors_pooled(
 
     struct PhantomStorage {
         ITensor *storage_ptr = nullptr;        // Points to the actual storage (owned or borrowed)
-        std::unique_ptr<ITensor> owned_storage;// Non-null only when we own the storage
+        luisa::unique_ptr<ITensor> owned_storage;// Non-null only when we own the storage
     };
-    std::vector<PhantomStorage> phantom_storages(plan.color_slots.size());
+    luisa::vector<PhantomStorage> phantom_storages(plan.color_slots.size());
 
     for (size_t si = 0; si < plan.color_slots.size(); ++si) {
         auto const &slot = plan.color_slots[si];
@@ -511,9 +528,9 @@ AllocationPlan NetworkInstance::create_intermediate_tensors_pooled(
             auto phantom_shape = typename ITensor::shape_type{static_cast<ITensor::size_type>(slot_size)};
             visit_onnx_dtype(first_var.get_dtype(), [&]<typename T>() {
                 auto container = typename NNTensor<T>::container_type{slot_size};
-                auto tensor = std::make_unique<NNTensor<T>>(
+                auto tensor = luisa::make_unique<NNTensor<T>>(
                     std::move(phantom_shape), std::move(container));
-                tensor->set_name("_storage_" + std::to_string(si));
+                tensor->set_name(luisa::format("_storage_{}", si));
                 phantom_storages[si].storage_ptr = tensor.get();
                 phantom_storages[si].owned_storage = std::move(tensor);
             });
@@ -538,9 +555,9 @@ AllocationPlan NetworkInstance::create_intermediate_tensors_pooled(
                 auto &storage = static_cast<NNTensor<T> &>(*phantom_storages[si].storage_ptr);
                 auto view_container = typename NNTensor<T>::container_type(
                     num_elements, storage.container());
-                auto tensor = std::make_unique<NNTensor<T>>(
+                auto tensor = luisa::make_unique<NNTensor<T>>(
                     std::move(tensor_shape), std::move(view_container));
-                tensor->set_name(name);
+                tensor->set_name(sanitize_name(name));
                 tensor_table.own(name, std::move(tensor));
             });
         }
@@ -551,7 +568,7 @@ AllocationPlan NetworkInstance::create_intermediate_tensors_pooled(
     // Borrowed storages are NOT transferred (they live in the parent table).
     for (size_t si = 0; si < phantom_storages.size(); ++si) {
         if (!phantom_storages[si].owned_storage) continue;
-        auto storage_name = "_phantom_storage_" + std::to_string(si);
+        auto storage_name = luisa::format("_phantom_storage_{}", si);
         tensor_table.own(std::move(storage_name), std::move(phantom_storages[si].owned_storage));
     }
 
@@ -618,8 +635,8 @@ void NetworkInstance::execute_operators(
         // Update current node index in execution context
         exec_ctx_.current_node_idx = node_idx;
 
-        std::vector<std::reference_wrapper<ITensor>> op_inputs;
-        std::vector<std::reference_wrapper<ITensor>> op_outputs;
+        luisa::vector<std::reference_wrapper<ITensor>> op_inputs;
+        luisa::vector<std::reference_wrapper<ITensor>> op_outputs;
 
         for (auto const &in_var : node.get_inputs()) {
             op_inputs.emplace_back(tensor_table.at(in_var.get().get_name()));
@@ -630,13 +647,7 @@ void NetworkInstance::execute_operators(
 
         auto &op = ops[node_idx];
         op->set_environment(*this, tensor_table);
-        if (op->need_outline()) {
-            $outline_with_name(op->get_name()) {
-                op->forward(op_inputs, op_outputs);
-            };
-        } else {
-            op->forward(op_inputs, op_outputs);
-        }
+        op->forward(op_inputs, op_outputs);
     }
 
     // Restore parent execution context
@@ -648,10 +659,8 @@ void NetworkInstance::forward_graph(
     onnx::Graph const &graph) {
     // Phase 0: Pre-create all operator instances.
     auto ops = create_all_operators(graph, model_.get_opset());
-
     // Phase 1: Build last-use map from the graph structure.
     auto last_use_map = build_last_use_map(graph, tensor_table, ops);
-
     // Phase 2: Create all tensors using pool-aware allocation.
     //          Returns the full allocation plan (with schedule and slot info).
     auto plan = create_intermediate_tensors_pooled(tensor_table, graph, last_use_map, ops);
@@ -662,9 +671,9 @@ void NetworkInstance::forward_graph(
         for (size_t si = 0; si < plan.color_slots.size(); ++si) {
             auto const &slot = plan.color_slots[si];
             LUISA_INFO("Slot {} (size={}, type={}): members = [{}]",
-                       si, slot.size_class, slot.type_idx.name(),
+                       si, slot.size_class, slot.type_idx,
                        [&]() {
-                           std::string s;
+                           luisa::string s;
                            for (size_t i = 0; i < slot.members.size(); ++i) {
                                if (i > 0) s += ", ";
                                s += slot.members[i];
@@ -674,7 +683,7 @@ void NetworkInstance::forward_graph(
         }
         LUISA_INFO("Schedule: [{}]",
                    [&]() {
-                       std::string s;
+                       luisa::string s;
                        for (size_t i = 0; i < plan.schedule.size(); ++i) {
                            if (i > 0) s += ", ";
                            s += std::to_string(plan.schedule[i]);
@@ -700,7 +709,7 @@ void NetworkInstance::forward() {
 PreparedGraph NetworkInstance::prepare_graph(
     TensorTable *parent_table,
     onnx::Graph const &graph,
-    std::span<std::reference_wrapper<ITensor>> bound_outputs) {
+    luisa::span<std::reference_wrapper<ITensor>> bound_outputs) {
 
     PreparedGraph pg;
     pg.tensor_table.set_parent(parent_table);
@@ -732,26 +741,26 @@ void NetworkInstance::execute_prepared_graph(
                       prepared.last_use_map, prepared.schedule, &prepared.plan);
 }
 
-std::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
+luisa::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
     TensorTable *parent_table,
-    std::vector<std::pair<onnx::Graph const *, std::span<std::reference_wrapper<ITensor>>>> const &branch_infos,
-    std::vector<ITensor *> const &reusable_parent_storages) {
+    luisa::vector<std::pair<onnx::Graph const *, luisa::span<std::reference_wrapper<ITensor>>>> const &branch_infos,
+    luisa::vector<ITensor *> const &reusable_parent_storages) {
 
-    std::vector<PreparedGraph> results;
+    luisa::vector<PreparedGraph> results;
     results.reserve(branch_infos.size());
 
     // ---- Build external slots from caller-provided reusable parent storages ----
     // The caller (e.g. If operator via collect_dead_parent_storages) has already
     // verified that these storages are dead at the current execution point and
     // safe for subgraph reuse.  We simply describe them as ExternalSlots.
-    std::vector<ExternalSlot> parent_ext_slots;
-    std::vector<ITensor *> parent_ext_storages;
+    luisa::vector<ExternalSlot> parent_ext_slots;
+    luisa::vector<ITensor *> parent_ext_storages;
 
     for (size_t i = 0; i < reusable_parent_storages.size(); ++i) {
         auto *storage = reusable_parent_storages[i];
         if (!storage) continue;
         ExternalSlot es;
-        es.type_idx = storage->element_type();
+        es.type_idx = storage->element_type_index();
         es.capacity = storage->size();
         es.external_index = parent_ext_storages.size();
         parent_ext_slots.push_back(es);
@@ -761,8 +770,8 @@ std::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
     // For sibling branches (then/else), we also collect phantom storages
     // created by earlier branches so that later branches can reuse them.
     // These are safe to share because branches execute exclusively ($if/$else).
-    std::vector<ExternalSlot> sibling_ext_slots;
-    std::vector<ITensor *> sibling_ext_storages;
+    luisa::vector<ExternalSlot> sibling_ext_slots;
+    luisa::vector<ITensor *> sibling_ext_storages;
 
     for (size_t bi = 0; bi < branch_infos.size(); ++bi) {
         auto const &[graph_ptr, bound_outputs] = branch_infos[bi];
@@ -784,8 +793,8 @@ std::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
         pg.last_use_map = build_last_use_map(graph, pg.tensor_table, pg.ops);
 
         // Phase 2: Merge parent + sibling external slots, pass to allocator
-        std::vector<ExternalSlot> combined_ext_slots;
-        std::vector<ITensor *> combined_ext_storages;
+        luisa::vector<ExternalSlot> combined_ext_slots;
+        luisa::vector<ITensor *> combined_ext_storages;
         combined_ext_slots.reserve(parent_ext_slots.size() + sibling_ext_slots.size());
         combined_ext_storages.reserve(parent_ext_storages.size() + sibling_ext_storages.size());
 
@@ -814,7 +823,7 @@ std::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
                 auto &storage = entry.get();
                 size_t ext_idx = parent_ext_storages.size() + sibling_ext_storages.size();
                 ExternalSlot es;
-                es.type_idx = storage.element_type();
+                es.type_idx = storage.element_type_index();
                 es.capacity = storage.size();
                 es.external_index = ext_idx;
                 sibling_ext_slots.push_back(es);
@@ -828,13 +837,13 @@ std::vector<PreparedGraph> NetworkInstance::prepare_exclusive_graphs(
     return results;
 }
 
-std::vector<ITensor *> NetworkInstance::collect_dead_parent_storages(
+luisa::vector<ITensor *> NetworkInstance::collect_dead_parent_storages(
     TensorTable &tensor_table,
     AllocationPlan const &plan,
     LastUseMap const &last_use_map,
     size_t node_idx) {
 
-    std::vector<ITensor *> dead_storages;
+    luisa::vector<ITensor *> dead_storages;
 
     // For each color slot in the allocation plan, check if ALL of its member
     // tensors have last_use < node_idx (i.e. they are "dead" at the current If node).
@@ -858,7 +867,7 @@ std::vector<ITensor *> NetworkInstance::collect_dead_parent_storages(
 
         if (all_dead) {
             // Find the corresponding phantom storage in the tensor table
-            auto storage_name = "_phantom_storage_" + std::to_string(si);
+            auto storage_name = luisa::format("_phantom_storage_{}", si);
             if (tensor_table.contains_local(storage_name)) {
                 auto &entry = tensor_table.entry(storage_name);
                 if (entry.is_owned()) {

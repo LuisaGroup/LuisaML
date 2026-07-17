@@ -2,6 +2,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 // Constant: produces a constant tensor (value from attribute).
@@ -10,15 +12,15 @@ class Constant : public Operator {
 public:
     Constant() : Operator("Constant") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         // Constant op: output is already set by the runtime from the attribute.
         // Nothing to do in forward pass.
     }
 };
 
 REGISTER_TO_DEFAULT_OPSET(Constant) {
-    return std::make_unique<Constant>();
+    return luisa::make_unique<Constant>();
 };
 
 // ConstantOfShape: generates a tensor of a given shape filled with a constant value.
@@ -30,14 +32,14 @@ private:
 public:
     ConstantOfShape(float value) : Operator("ConstantOfShape"), value_(value) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(outputs.size() == 1, "ConstantOfShape requires 1 output.");
 #endif
         auto &Y = outputs[0].get();
 
-        visit_typeid<NNTypeList>(Y.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(Y.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &y = static_cast<NNTensor<T> &>(Y);
             if constexpr (std::is_same_v<VT, FP4E2M1>) {
@@ -81,7 +83,7 @@ REGISTER_TO_DEFAULT_OPSET(ConstantOfShape) {
     float value = 0.0f;
     if (auto p = node.try_get_attr("value"))
         value = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<ConstantOfShape>(value);
+    return luisa::make_unique<ConstantOfShape>(value);
 };
 
 // Range: generates a 1-D tensor of values [start, start+delta, start+2*delta, ...)
@@ -90,14 +92,14 @@ class Range : public Operator {
 public:
     Range() : Operator("Range") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1, "Range requires 3 inputs and 1 output.");
 #endif
         auto &Y = outputs[0].get();
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &start_t = static_cast<NNTensor<T> &>(inputs[0].get());
             auto &delta_t = static_cast<NNTensor<T> &>(inputs[2].get());
@@ -114,7 +116,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Range) {
-    return std::make_unique<Range>();
+    return luisa::make_unique<Range>();
 };
 
 // EyeLike: generates an identity matrix of the same shape as the input.
@@ -126,8 +128,8 @@ private:
 public:
     EyeLike(int64_t k) : Operator("EyeLike"), k_(k) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1, "EyeLike requires 1 input and 1 output.");
 #endif
@@ -140,10 +142,10 @@ public:
 
         uint32_t rows = y_shape[0], cols = y_shape[1];
 
-        visit_typeid<NNTypeList>(Y.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(Y.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &y = static_cast<NNTensor<T> &>(Y);
-            auto k_int = def(static_cast<int>(k_));
+            auto k_int = def(static_cast<int32_t>(k_));
 
             if constexpr (std::is_same_v<VT, FP4E2M1>) {
                 auto enc = fp4e2m1_from_float();
@@ -209,7 +211,7 @@ REGISTER_TO_DEFAULT_OPSET(EyeLike) {
     int64_t k = 0;
     if (auto p = node.try_get_attr("k"))
         k = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<EyeLike>(k);
+    return luisa::make_unique<EyeLike>(k);
 };
 
 // RandomUniform: generates a tensor with random uniform values.
@@ -225,14 +227,14 @@ public:
     RandomUniform(float low, float high, float seed)
         : Operator("RandomUniform"), low_(low), high_(high), seed_(seed) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(outputs.size() == 1, "RandomUniform requires 1 output.");
 #endif
         auto &Y = outputs[0].get();
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &y = static_cast<NNTensor<T> &>(Y);
             auto low = Var<VT>{VT(low_)};
@@ -255,7 +257,7 @@ REGISTER_TO_DEFAULT_OPSET(RandomUniform) {
     if (auto p = node.try_get_attr("low")) low = p->get<onnx::AttributeType::FLOAT>();
     if (auto p = node.try_get_attr("high")) high = p->get<onnx::AttributeType::FLOAT>();
     if (auto p = node.try_get_attr("seed")) seed = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<RandomUniform>(low, high, seed);
+    return luisa::make_unique<RandomUniform>(low, high, seed);
 };
 
 }// namespace lcml::onnx

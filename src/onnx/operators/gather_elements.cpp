@@ -1,6 +1,8 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -13,8 +15,8 @@ private:
 public:
     GatherElements(int64_t axis) : Operator("GatherElements"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "GatherElements requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
@@ -24,10 +26,10 @@ public:
         auto ndim = data.ndim();
         int64_t axis = axis_ < 0 ? axis_ + ndim : axis_;
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "GatherElements: data and output must have the same element type.");
-        LUISA_ASSERT(indices.element_type() == typeid(int) || indices.element_type() == typeid(slong),
-                     "GatherElements: indices must be int or int64 type.");
+        LUISA_ASSERT(indices.element_type_index() == refl::type_index_of<int32_t>() || indices.element_type_index() == refl::type_index_of<slong>(),
+                     "GatherElements: indices must be int32_t or int64 type.");
 
 #ifndef NDEBUG
         LUISA_ASSERT(data.ndim() == indices.ndim(),
@@ -40,19 +42,19 @@ public:
         }
 #endif
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &idx_tensor = static_cast<NNTensor<int> &>(indices);
+            auto &idx_tensor = static_cast<NNTensor<int32_t> &>(indices);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = nn_storage_type_t<T>;
 
             // Fast path: constant indices -> precompute gather positions at C++ time
             if (indices.is_constant() && indices.size() <= 128) {
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
                 auto const &cpu_idx = idx_const.const_data();
 
                 // Precompute data offsets for every output element
-                std::vector<uint32_t> data_offsets;
+                luisa::vector<uint32_t> data_offsets;
                 data_offsets.reserve(out.size());
                 for (uint32_t linear_out = 0; linear_out < out.size(); ++linear_out) {
                     uint32_t data_linear = 0;
@@ -61,8 +63,8 @@ public:
                         uint32_t coord = remaining / out.strides()[d];
                         remaining = remaining % out.strides()[d];
                         if (d == static_cast<uint32_t>(axis)) {
-                            int idx_val = static_cast<int>(cpu_idx[linear_out]);
-                            if (idx_val < 0) idx_val += static_cast<int>(data.shape()[d]);
+                            int32_t idx_val = static_cast<int32_t>(cpu_idx[linear_out]);
+                            if (idx_val < 0) idx_val += static_cast<int32_t>(data.shape()[d]);
                             data_linear += static_cast<uint32_t>(idx_val) * in.strides()[d];
                         } else {
                             data_linear += coord * in.strides()[d];
@@ -148,7 +150,7 @@ public:
                     auto data_linear = def(0u);
                     // Hoisted index load with negative-index normalization
                     auto idx_signed = idx_tensor[linear_out];
-                    auto dim_size = static_cast<int>(in.shape()[axis]);
+                    auto dim_size = static_cast<int32_t>(in.shape()[axis]);
                     auto idx_norm = select(idx_signed + dim_size, idx_signed, idx_signed < 0);
 
                     for_each_dim(linear_out, out.strides(), ndim, [&](uint32_t d, auto coord) {
@@ -168,7 +170,7 @@ public:
                 auto data_linear = def(0u);
                 // Hoisted index load with negative-index normalization
                 auto idx_signed = idx_tensor[linear_out];
-                auto dim_size = static_cast<int>(in.shape()[axis]);
+                auto dim_size = static_cast<int32_t>(in.shape()[axis]);
                 auto idx_norm = select(idx_signed + dim_size, idx_signed, idx_signed < 0);
 
                 for_each_dim(linear_out, out.strides(), ndim, [&](uint32_t d, auto coord) {
@@ -188,7 +190,7 @@ REGISTER_TO_DEFAULT_OPSET(GatherElements) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<GatherElements>(axis);
+    return luisa::make_unique<GatherElements>(axis);
 };
 
 }// namespace lcml::onnx

@@ -46,20 +46,20 @@ struct FP4E2M1 {
         }
 
         // Decompose float
-        int exp;
+        int32_t exp;
         float mant = std::frexp(v, &exp);// v = mant * 2^exp, mant in [0.5, 1.0)
         // Adjust to get mant in [1.0, 2.0)
         mant *= 2.0f;
         exp -= 1;
 
-        int e = exp + kBias;
+        int32_t e = exp + kBias;
         if (e <= 0) {
             // Denormal or underflow to zero
             if (e < -kMantBits) {
                 return static_cast<uint8_t>(sign ? kSignMask : 0);
             }
             // Denormal: shift mantissa right
-            int shift = 1 - e;
+            int32_t shift = 1 - e;
             mant = mant / static_cast<float>(1 << shift);
             e = 0;
         }
@@ -171,13 +171,13 @@ struct FP8E4M3FN {
         }
 
         // Decompose float
-        int exp;
+        int32_t exp;
         float mant = std::frexp(v, &exp);// v = mant * 2^exp, mant in [0.5, 1.0)
         // Adjust to get mant in [1.0, 2.0)
         mant *= 2.0f;
         exp -= 1;
 
-        int e = exp + kBias;
+        int32_t e = exp + kBias;
         if (e <= 0) {
             // Denormal or underflow to zero
             if (e < -kMantBits) {
@@ -185,7 +185,7 @@ struct FP8E4M3FN {
                 return bits;
             }
             // Denormal: shift mantissa right
-            int shift = 1 - e;
+            int32_t shift = 1 - e;
             mant = mant / static_cast<float>(1 << shift);
             e = 0;
         }
@@ -297,13 +297,13 @@ struct FP8E5M2 {
         }
 
         // Decompose float
-        int exp;
+        int32_t exp;
         float mant = std::frexp(v, &exp);// v = mant * 2^exp, mant in [0.5, 1.0)
         // Adjust to get mant in [1.0, 2.0)
         mant *= 2.0f;
         exp -= 1;
 
-        int e = exp + kBias;
+        int32_t e = exp + kBias;
         if (e <= 0) {
             // Denormal or underflow to zero
             if (e < -kMantBits) {
@@ -311,7 +311,7 @@ struct FP8E5M2 {
                 return bits;
             }
             // Denormal: shift mantissa right
-            int shift = 1 - e;
+            int32_t shift = 1 - e;
             mant = mant / static_cast<float>(1 << shift);
             e = 0;
         }

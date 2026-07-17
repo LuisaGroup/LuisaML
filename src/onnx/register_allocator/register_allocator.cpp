@@ -4,7 +4,13 @@
 #include <algorithm>
 #include <numeric>
 #include <cassert>
-#include <queue>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/unordered_map.h>
+#include <luisa/core/stl/queue.h>
+#include <luisa/core/stl/functional.h>
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/hash.h>
 #include <luisa/core/logging.h>
 
 namespace lcml::onnx {
@@ -15,7 +21,7 @@ RegisterAllocator::RegisterAllocator(
     OperatorList const &ops,
     onnx::StringNodeMap<bool> const &already_bound,
     RegAllocConfig const &config,
-    std::vector<ExternalSlot> external_slots)
+    luisa::vector<ExternalSlot> external_slots)
     : graph_(graph), orig_last_use_map_(last_use_map),
       ops_(ops), already_bound_(already_bound), config_(config),
       external_slots_(std::move(external_slots)) {}
@@ -35,7 +41,7 @@ AllocationPlan RegisterAllocator::run() {
 // Helpers
 // ================================================================
 
-bool RegisterAllocator::is_skip_var(std::string const &vn) const {
+bool RegisterAllocator::is_skip_var(luisa::string const &vn) const {
     if (already_bound_.find(vn) != already_bound_.end()) return true;
     auto it = orig_last_use_map_.find(vn);
     if (it == orig_last_use_map_.end()) return true;
@@ -43,7 +49,7 @@ bool RegisterAllocator::is_skip_var(std::string const &vn) const {
     return false;
 }
 
-ElementCount RegisterAllocator::compute_num_elements(std::vector<size_t> const &shape) {
+ElementCount RegisterAllocator::compute_num_elements(luisa::vector<size_t> const &shape) {
     if (shape.empty()) return 0;
     return std::accumulate(shape.begin(), shape.end(), ElementCount{1}, std::multiplies<>{});
 }
@@ -58,7 +64,7 @@ ElementCount RegisterAllocator::compute_num_elements(std::vector<size_t> const &
 // Recursively collect external variable references from subgraphs.
 void RegisterAllocator::collect_external_refs_recursive(
     onnx::Graph const &sub_graph,
-    std::unordered_set<std::string> &ext_refs) {
+    luisa::unordered_set<luisa::string> &ext_refs) {
     auto const &local_vars = sub_graph.get_variables();
     for (auto const &sub_node : sub_graph.get_nodes()) {
         for (auto const &in_var : sub_node.get_inputs()) {
@@ -94,7 +100,7 @@ void RegisterAllocator::build_ext_input_names(SchedulingContext &ctx) const {
     ctx.ext_input_names.resize(ctx.N);
 
     for (size_t i = 0; i < ctx.N; ++i) {
-        std::unordered_set<std::string> ext_refs;
+        luisa::unordered_set<luisa::string> ext_refs;
         for (auto const &[attr_name, attr] : nodes[i].get_attributes()) {
             auto attr_type = onnx::Attribute::type_of(attr);
             if (attr_type == onnx::AttributeType::GRAPH) {
@@ -172,8 +178,8 @@ void RegisterAllocator::compute_node_heights(SchedulingContext &ctx) const {
     size_t N = ctx.N;
     ctx.height.assign(N, 0);
 
-    std::vector<size_t> out_degree(N, 0);
-    std::vector<std::unordered_set<size_t>> predecessors(N);
+    luisa::vector<size_t> out_degree(N, 0);
+    luisa::vector<luisa::unordered_set<size_t>> predecessors(N);
     for (size_t i = 0; i < N; ++i) {
         for (auto s : ctx.successors[i]) {
             predecessors[s].insert(i);
@@ -181,7 +187,7 @@ void RegisterAllocator::compute_node_heights(SchedulingContext &ctx) const {
         }
     }
 
-    std::queue<size_t> q;
+    luisa::queue<size_t> q;
     for (size_t i = 0; i < N; ++i) {
         if (out_degree[i] == 0) q.push(i);
     }
@@ -198,7 +204,7 @@ void RegisterAllocator::compute_node_heights(SchedulingContext &ctx) const {
 
 // Compute freed memory size for a single variable being consumed as last use.
 static int64_t freed_memory_for_var(
-    std::string const &vn,
+    luisa::string const &vn,
     bool skip,
     onnx::StringNodeMap<size_t> const &remaining_consumers,
     onnx::StringNodeMap<size_t> const &var_size) {
@@ -215,14 +221,14 @@ void RegisterAllocator::schedule_nodes(SchedulingContext &ctx) {
     auto const &nodes = graph_.get_nodes();
     size_t N = ctx.N;
 
-    std::vector<size_t> ready;
+    luisa::vector<size_t> ready;
     for (size_t i = 0; i < N; ++i) {
         if (ctx.in_degree[i] == 0) ready.push_back(i);
     }
 
     schedule_.clear();
     schedule_.reserve(N);
-    std::vector<bool> scheduled(N, false);
+    luisa::vector<bool> scheduled(N, false);
 
     while (!ready.empty()) {
         size_t best_idx = 0;
@@ -313,7 +319,7 @@ void RegisterAllocator::remap_last_use_map(SchedulingContext const &ctx) {
         size_t vi = orig_to_virtual_[orig_i];
         auto const &node = nodes[orig_i];
 
-        auto emplace_or_update = [](LastUseMap &m, std::string const &vn, size_t vi) {
+        auto emplace_or_update = [](LastUseMap &m, luisa::string const &vn, size_t vi) {
             auto [it, inserted] = m.emplace(vn, vi);
             if (!inserted && vi > it->second) it->second = vi;
         };
@@ -390,7 +396,7 @@ void RegisterAllocator::init_units() {
     }
 
     for (auto const &[name, var] : graph_.get_variables()) {
-        auto const &elem_typeid = onnx_dtype_to_typeid(var.get_dtype());
+        auto elem_type_idx = onnx_dtype_to_type_index(var.get_dtype());
         auto num_elements = compute_num_elements(var.get_shape());
 
         NodeIndex def_node = 0;
@@ -399,7 +405,7 @@ void RegisterAllocator::init_units() {
         NodeIndex last_use = 0;
         if (auto it = vlast_use_map_.find(name); it != vlast_use_map_.end()) last_use = it->second;
 
-        AllocationUnit unit(name, std::type_index(elem_typeid), num_elements, def_node, last_use);
+        AllocationUnit unit(name, elem_type_idx, num_elements, def_node, last_use);
 
         if (var.is_constant() || var.is_trainable_weight() || !var.get_raw_data().empty()) {
             unit.skip_allocation = true;
@@ -595,7 +601,7 @@ void RegisterAllocator::compute_live_ranges() {
             ri.merged_def = unit.def_node;
             ri.merged_last_use = unit.last_use_node;
             ri.members.push_back(name);
-            root_infos_[std::string{root}] = std::move(ri);
+            root_infos_[luisa::string{root}] = std::move(ri);
         } else {
             auto &ri = it->second;
             ri.max_elements = std::max(ri.max_elements, unit.num_elements);
@@ -643,7 +649,7 @@ void RegisterAllocator::normalize_size_classes() {
 void RegisterAllocator::build_interference_graph() {
     adj_.clear();
 
-    std::vector<std::string> active_roots;
+    luisa::vector<luisa::string> active_roots;
     for (auto const &[root, ri] : root_infos_) {
         if (ri.skip) continue;
         active_roots.push_back(root);
@@ -684,7 +690,7 @@ void RegisterAllocator::build_interference_graph() {
 // ================================================================
 
 bool RegisterAllocator::can_place_root_in_color(
-    std::string const &root, ColorId color) const {
+    luisa::string const &root, ColorId color) const {
     auto adj_it = adj_.find(root);
     if (adj_it != adj_.end()) {
         for (auto const &nb : adj_it->second) {
@@ -708,7 +714,7 @@ void RegisterAllocator::initial_greedy_coloring(ColoringContext &ctx) {
     // Sort: size descending, then def ascending, then last_use ascending
     auto const &infos = root_infos_;
     std::sort(ctx.active_roots.begin(), ctx.active_roots.end(),
-              [&infos](std::string const &a, std::string const &b) {
+              [&infos](luisa::string const &a, luisa::string const &b) {
                   auto sa = infos.at(a).size_class, sb = infos.at(b).size_class;
                   if (sa != sb) return sa > sb;
                   auto da = infos.at(a).merged_def, db = infos.at(b).merged_def;
@@ -719,7 +725,7 @@ void RegisterAllocator::initial_greedy_coloring(ColoringContext &ctx) {
     for (auto const &root : ctx.active_roots) {
         ElementCount my_size = root_infos_[root].size_class;
 
-        std::unordered_set<ColorId> forbidden;
+        luisa::unordered_set<ColorId> forbidden;
         if (adj_.count(root)) {
             for (auto const &nb : adj_.at(root)) {
                 auto cit = color_map_.find(nb);
@@ -895,7 +901,7 @@ bool RegisterAllocator::try_pairwise_swaps(ColoringContext &ctx) {
 }
 
 void RegisterAllocator::try_color_dissolution(ColoringContext &ctx) {
-    std::vector<ColorId> color_order;
+    luisa::vector<ColorId> color_order;
     for (ColorId c = 0; c < num_colors_; ++c) {
         if (!ctx.color_members[c].empty()) color_order.push_back(c);
     }
@@ -911,10 +917,10 @@ void RegisterAllocator::try_color_dissolution(ColoringContext &ctx) {
         // Do not dissolve external (borrowed) color slots
         if (ctx.color_external_index[c] != SIZE_MAX) continue;
 
-        std::vector<std::string> members(ctx.color_members[c].begin(),
+        luisa::vector<luisa::string> members(ctx.color_members[c].begin(),
                                          ctx.color_members[c].end());
         std::sort(members.begin(), members.end(),
-                  [this](std::string const &a, std::string const &b) {
+                  [this](luisa::string const &a, luisa::string const &b) {
                       return root_infos_.at(a).size_class > root_infos_.at(b).size_class;
                   });
 
@@ -924,7 +930,7 @@ void RegisterAllocator::try_color_dissolution(ColoringContext &ctx) {
         ctx.color_slot_size[c] = 0;
         for (auto const &m : members) color_map_[m] = SIZE_MAX;
 
-        std::vector<std::pair<std::string, ColorId>> reassignment;
+        luisa::vector<std::pair<luisa::string, ColorId>> reassignment;
         bool feasible = true;
         ElementCount added_cost = 0;
 
@@ -958,7 +964,7 @@ void RegisterAllocator::try_color_dissolution(ColoringContext &ctx) {
 
         if (!feasible || added_cost >= saved_slot) {
             // Rollback
-            std::unordered_set<ColorId> affected;
+            luisa::unordered_set<ColorId> affected;
             for (auto const &[m, tc] : reassignment) {
                 ctx.color_members[tc].erase(m);
                 affected.insert(tc);
@@ -1034,7 +1040,7 @@ void RegisterAllocator::try_slot_absorption(ColoringContext &ctx) {
 }
 
 void RegisterAllocator::compact_colors(ColoringContext &ctx) {
-    std::vector<ColorId> old_to_new(num_colors_, SIZE_MAX);
+    luisa::vector<ColorId> old_to_new(num_colors_, SIZE_MAX);
     ColorId new_num = 0;
     for (ColorId c = 0; c < num_colors_; ++c) {
         if (!ctx.color_members[c].empty()) old_to_new[c] = new_num++;
@@ -1043,7 +1049,7 @@ void RegisterAllocator::compact_colors(ColoringContext &ctx) {
         color = old_to_new[color];
     }
     // Compact color_external_index in sync
-    std::vector<size_t> new_ext_index(new_num, SIZE_MAX);
+    luisa::vector<size_t> new_ext_index(new_num, SIZE_MAX);
     for (ColorId c = 0; c < num_colors_; ++c) {
         if (old_to_new[c] != SIZE_MAX) {
             new_ext_index[old_to_new[c]] = ctx.color_external_index[c];
@@ -1084,7 +1090,7 @@ void RegisterAllocator::greedy_color() {
 
     // Phase 2a & 2b: Single-root moves and pairwise swaps
     bool improved = true;
-    for (int iter = 0; improved && iter < config_.local_search_max_iterations; ++iter) {
+    for (int32_t iter = 0; improved && iter < config_.local_search_max_iterations; ++iter) {
         improved = try_single_root_moves(ctx);
         if (!improved) {
             improved = try_pairwise_swaps(ctx);
@@ -1112,17 +1118,17 @@ AllocationPlan RegisterAllocator::build_plan() {
     AllocationPlan plan;
 
     struct SlotKey {
-        std::type_index type_idx;
+        luisa::TypeIndex type_idx;
         ColorId color;
         bool operator==(SlotKey const &o) const { return type_idx == o.type_idx && color == o.color; }
     };
     struct SlotKeyHash {
         size_t operator()(SlotKey const &k) const {
-            return k.type_idx.hash_code() ^ (std::hash<ColorId>{}(k.color) << 1);
+            return luisa::hash_value(k.type_idx) ^ (std::hash<ColorId>{}(k.color) << 1);
         }
     };
 
-    std::unordered_map<SlotKey, ColorId, SlotKeyHash> slot_index_map;
+    luisa::unordered_map<SlotKey, ColorId, SlotKeyHash> slot_index_map;
 
     for (auto const &[root, ri] : root_infos_) {
         if (ri.skip) continue;

@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -16,16 +17,16 @@ public:
     ReverseSequence(int64_t batch_axis, int64_t time_axis)
         : Operator("ReverseSequence"), batch_axis_(batch_axis), time_axis_(time_axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1, "ReverseSequence requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
         auto ndim = data.ndim();
 
-        LUISA_ASSERT(data.element_type() == output.element_type(), "ReverseSequence: data and output must have the same element type.");
-        LUISA_ASSERT(inputs[1].get().element_type() == typeid(int) || inputs[1].get().element_type() == typeid(slong),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(), "ReverseSequence: data and output must have the same element type.");
+        LUISA_ASSERT(inputs[1].get().element_type_index() == refl::type_index_of<int32_t>() || inputs[1].get().element_type_index() == refl::type_index_of<slong>(),
                      "ReverseSequence: sequence_lens must be int or int64 type.");
 #else
         auto &data = inputs[0].get();
@@ -33,9 +34,9 @@ public:
         auto ndim = data.ndim();
 #endif
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &seq_lens = static_cast<NNTensor<int> &>(inputs[1].get());
+            auto &seq_lens = static_cast<NNTensor<int32_t> &>(inputs[1].get());
             auto &out = static_cast<NNTensor<T> &>(output);
 
             auto batch_axis = static_cast<uint32_t>(batch_axis_ < 0 ? batch_axis_ + ndim : batch_axis_);
@@ -176,7 +177,7 @@ REGISTER_TO_DEFAULT_OPSET(ReverseSequence) {
         batch_axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("time_axis"))
         time_axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<ReverseSequence>(batch_axis, time_axis);
+    return luisa::make_unique<ReverseSequence>(batch_axis, time_axis);
 };
 
 }// namespace lcml::onnx

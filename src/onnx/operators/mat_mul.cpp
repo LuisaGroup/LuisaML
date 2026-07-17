@@ -3,6 +3,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 // MatMul: general matrix multiplication supporting N-D batch dimensions.
@@ -16,8 +18,8 @@ public:
         warp_size_ = env.warp_size();
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "MatMul requires 2 inputs and 1 output.");
@@ -30,7 +32,7 @@ public:
         auto const &b_shape = B.shape();
         auto const &y_shape = Y.shape();
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(A.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(A.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &a = static_cast<NNTensor<T> &>(A);
             auto &b = static_cast<NNTensor<T> &>(B);
@@ -305,7 +307,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(MatMul) {
-    return std::make_unique<MatMul>();
+    return luisa::make_unique<MatMul>();
 };
 
 }// namespace lcml::onnx

@@ -2,10 +2,12 @@
 
 #include "luisa_ml_config.h"
 
-#include <memory>
 #include <functional>
-#include <variant>
-#include <stdexcept>
+
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/variant.h>
+#include <luisa/core/stl/string.h>
+
 #include "tensor.h"
 #include "onnx.h"
 
@@ -19,11 +21,11 @@ namespace lcml::onnx {
  */
 class TensorEntry {
 public:
-    using OwnedPtr = std::unique_ptr<ITensor>;
+    using OwnedPtr = luisa::unique_ptr<ITensor>;
     using BorrowedRef = std::reference_wrapper<ITensor>;
 
 private:
-    std::variant<OwnedPtr, BorrowedRef> storage_;
+    luisa::variant<OwnedPtr, BorrowedRef> storage_;
 
 public:
     // Construct an owned entry
@@ -43,28 +45,28 @@ public:
 
     /// @brief Whether this entry owns its tensor.
     [[nodiscard]] bool is_owned() const noexcept {
-        return std::holds_alternative<OwnedPtr>(storage_);
+        return luisa::holds_alternative<OwnedPtr>(storage_);
     }
 
     /// @brief Whether this entry borrows (references) its tensor.
     [[nodiscard]] bool is_borrowed() const noexcept {
-        return std::holds_alternative<BorrowedRef>(storage_);
+        return luisa::holds_alternative<BorrowedRef>(storage_);
     }
 
     /// @brief Get a reference to the underlying tensor.
     [[nodiscard]] ITensor &get() {
-        if (auto *p = std::get_if<OwnedPtr>(&storage_)) {
+        if (auto *p = luisa::get_if<OwnedPtr>(&storage_)) {
             return **p;
         }
-        return std::get<BorrowedRef>(storage_).get();
+        return luisa::get<BorrowedRef>(storage_).get();
     }
 
     /// @brief Get a const reference to the underlying tensor.
     [[nodiscard]] ITensor const &get() const {
-        if (auto *p = std::get_if<OwnedPtr>(&storage_)) {
+        if (auto *p = luisa::get_if<OwnedPtr>(&storage_)) {
             return **p;
         }
-        return std::get<BorrowedRef>(storage_).get();
+        return luisa::get<BorrowedRef>(storage_).get();
     }
 
     /// @brief Implicit conversion to ITensor reference for convenience.
@@ -80,7 +82,7 @@ public:
      * @return The owned unique_ptr<ITensor>.
      */
     [[nodiscard]] OwnedPtr release_owned() {
-        auto *ptr = std::get_if<OwnedPtr>(&storage_);
+        auto *ptr = luisa::get_if<OwnedPtr>(&storage_);
         return std::move(*ptr);
     }
 };
@@ -123,12 +125,12 @@ public:
     // ==================== Insertion ====================
 
     /// @brief Bind a borrowed (external) tensor reference by name.
-    void bind(std::string name, ITensor &tensor) {
+    void bind(luisa::string name, ITensor &tensor) {
         map_.insert_or_assign(std::move(name), TensorEntry{std::ref(tensor)});
     }
 
     /// @brief Insert an owned tensor by name.
-    void own(std::string name, std::unique_ptr<ITensor> tensor) {
+    void own(luisa::string name, luisa::unique_ptr<ITensor> tensor) {
         map_.insert_or_assign(std::move(name), TensorEntry{std::move(tensor)});
     }
 
@@ -191,7 +193,7 @@ public:
      * @param name  The name of the tensor to release.
      * @return The owned unique_ptr<ITensor>, or nullptr if not found/not owned.
      */
-    [[nodiscard]] std::unique_ptr<ITensor> release_owned(std::string_view name) {
+    [[nodiscard]] luisa::unique_ptr<ITensor> release_owned(std::string_view name) {
         auto it = map_.find(name);
         if (it == map_.end()) return nullptr;
         auto &entry = it->second;

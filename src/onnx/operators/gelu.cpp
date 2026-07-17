@@ -2,6 +2,9 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/string.h>
+
 namespace lcml::onnx {
 
 // Gelu: Gaussian Error Linear Unit
@@ -10,22 +13,22 @@ namespace lcml::onnx {
 //   tanh:  x * 0.5 * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
 class Gelu : public Operator {
 private:
-    std::string approximate_;
+    luisa::string approximate_;
 
 public:
-    Gelu(std::string approximate) : Operator("Gelu"), approximate_(std::move(approximate)) {}
+    Gelu(luisa::string approximate) : Operator("Gelu"), approximate_(std::move(approximate)) {}
 
     /// Element-wise activation: safe for in-place.
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Gelu requires 1 input and 1 output.");
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Gelu: input and output must have the same element type.");
         LUISA_ASSERT(input.size() == output.size(),
                      "Gelu: input and output must have the same size.");
@@ -38,7 +41,7 @@ public:
 
         bool use_tanh = (approximate_ == "tanh");
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(input.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
@@ -127,10 +130,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Gelu) {
-    std::string approximate = "none";
+    luisa::string approximate = "none";
     if (auto p = node.try_get_attr("approximate"))
         approximate = p->get<onnx::AttributeType::STRING>();
-    return std::make_unique<Gelu>(std::move(approximate));
+    return luisa::make_unique<Gelu>(std::move(approximate));
 };
 
 }// namespace lcml::onnx

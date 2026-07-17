@@ -1,6 +1,9 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -113,16 +116,16 @@ private:
         auto const &out_shape = output.shape();
         auto out_ndim = out_shape.size();
 
-        std::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
+        luisa::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
         for (size_t i = 0; i < sa.size(); ++i)
             pa[out_ndim - sa.size() + i] = sa[i];
         for (size_t i = 0; i < sb.size(); ++i)
             pb[out_ndim - sb.size() + i] = sb[i];
 
-        std::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
+        luisa::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
         {
             uint32_t sa_acc = 1, sb_acc = 1;
-            for (int i = static_cast<int>(out_ndim) - 1; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(out_ndim) - 1; i >= 0; --i) {
                 stride_a[i] = (pa[i] == 1) ? 0u : sa_acc;
                 sa_acc *= pa[i];
                 stride_b[i] = (pb[i] == 1) ? 0u : sb_acc;
@@ -220,16 +223,16 @@ private:
         auto const &out_shape = output.shape();
         auto out_ndim = out_shape.size();
 
-        std::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
+        luisa::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
         for (size_t i = 0; i < sa.size(); ++i)
             pa[out_ndim - sa.size() + i] = sa[i];
         for (size_t i = 0; i < sb.size(); ++i)
             pb[out_ndim - sb.size() + i] = sb[i];
 
-        std::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
+        luisa::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
         {
             uint32_t sa_acc = 1, sb_acc = 1;
-            for (int i = static_cast<int>(out_ndim) - 1; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(out_ndim) - 1; i >= 0; --i) {
                 stride_a[i] = (pa[i] == 1) ? 0u : sa_acc;
                 sa_acc *= pa[i];
                 stride_b[i] = (pb[i] == 1) ? 0u : sb_acc;
@@ -282,22 +285,22 @@ private:
     }
 
 public:
-    Binary(std::string name) : Operator(std::move(name)) {}
+    Binary(luisa::string name) : Operator(std::move(name)) {}
 
     /// Element-wise binary ops can safely operate in-place on input[0]
     /// when input[0] and output have the same number of elements (no broadcast on input[0]).
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Binary operator requires 2 inputs and 1 output.");
         auto &a = inputs[0].get();
         auto &b = inputs[1].get();
         auto &out = outputs[0].get();
 
-        LUISA_ASSERT(a.element_type() == b.element_type() &&
-                         a.element_type() == out.element_type(),
+        LUISA_ASSERT(a.element_type_index() == b.element_type_index() &&
+                         a.element_type_index() == out.element_type_index(),
                      "Binary op: all tensors must have the same element type.");
 
         // Verify output shape matches broadcast result
@@ -305,7 +308,7 @@ public:
         LUISA_ASSERT(out.shape() == expected,
                      "Binary op: output shape does not match broadcast result.");
 
-        visit_typeid<TypeList>(a.element_type(), [&]<typename T>() {
+        visit_type_index<TypeList>(a.element_type_index(), [&]<typename T>() {
             apply_to(static_cast<NNTensor<T> &>(a),
                      static_cast<NNTensor<T> &>(b),
                      static_cast<NNTensor<T> &>(out));
@@ -325,7 +328,7 @@ public:
         T apply(T a, T b) const { return expr; }  \
     };                                            \
     REGISTER_TO_DEFAULT_OPSET(Name) {             \
-        return std::make_unique<Name>();          \
+        return luisa::make_unique<Name>();          \
     }
 
 #define DEFINE_BINARY_OP(Name, expr) DEFINE_BINARY_OP_EX(Name, NNTypeList, expr)
@@ -432,14 +435,14 @@ private:
         auto const &out_shape = output.shape();
         auto out_ndim = out_shape.size();
 
-        std::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
+        luisa::vector<uint32_t> pa(out_ndim, 1u), pb(out_ndim, 1u);
         for (size_t i = 0; i < sa.size(); ++i) pa[out_ndim - sa.size() + i] = sa[i];
         for (size_t i = 0; i < sb.size(); ++i) pb[out_ndim - sb.size() + i] = sb[i];
 
-        std::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
+        luisa::vector<uint32_t> stride_a(out_ndim, 0u), stride_b(out_ndim, 0u);
         {
             uint32_t sa_acc = 1, sb_acc = 1;
-            for (int i = static_cast<int>(out_ndim) - 1; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(out_ndim) - 1; i >= 0; --i) {
                 stride_a[i] = (pa[i] == 1) ? 0u : sa_acc;
                 sa_acc *= pa[i];
                 stride_b[i] = (pb[i] == 1) ? 0u : sb_acc;
@@ -456,26 +459,26 @@ private:
     }
 
 public:
-    Comparison(std::string name) : Operator(std::move(name)) {}
+    Comparison(luisa::string name) : Operator(std::move(name)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Comparison operator requires 2 inputs and 1 output.");
         auto &a = inputs[0].get();
         auto &b = inputs[1].get();
         auto &out = outputs[0].get();
 
-        LUISA_ASSERT(a.element_type() == b.element_type(),
+        LUISA_ASSERT(a.element_type_index() == b.element_type_index(),
                      "Comparison op: inputs must have the same element type.");
-        LUISA_ASSERT(out.element_type() == typeid(bool),
+        LUISA_ASSERT(out.element_type_index() == refl::type_index_of<bool>(),
                      "Comparison op: output must be bool type.");
 
         auto expected = broadcast_shape(a.shape(), b.shape());
         LUISA_ASSERT(out.shape() == expected,
                      "Comparison op: output shape mismatch.");
 
-        visit_typeid<TypeList>(a.element_type(), [&]<typename T>() {
+        visit_type_index<TypeList>(a.element_type_index(), [&]<typename T>() {
             apply_to(static_cast<NNTensor<T> &>(a),
                      static_cast<NNTensor<T> &>(b),
                      static_cast<NNTensor<bool> &>(out));
@@ -491,7 +494,7 @@ public:
         auto apply(T a, T b) const { return expr; }   \
     };                                                \
     REGISTER_TO_DEFAULT_OPSET(Name) {                 \
-        return std::make_unique<Name>();              \
+        return luisa::make_unique<Name>();              \
     }
 
 #define DEFINE_COMPARISON_OP(Name, expr) DEFINE_COMPARISON_OP_EX(Name, NNFilteredTypeList<IsNativeArithmetic>, expr)
@@ -585,13 +588,13 @@ private:
         // General broadcast path
         auto out_ndim = out_shape.size();
 
-        std::vector<uint32_t> pb(out_ndim, 1u);
+        luisa::vector<uint32_t> pb(out_ndim, 1u);
         for (size_t i = 0; i < sb.size(); ++i) pb[out_ndim - sb.size() + i] = sb[i];
 
-        std::vector<uint32_t> stride_b(out_ndim, 0u);
+        luisa::vector<uint32_t> stride_b(out_ndim, 0u);
         {
             uint32_t sb_acc = 1;
-            for (int i = static_cast<int>(out_ndim) - 1; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(out_ndim) - 1; i >= 0; --i) {
                 stride_b[i] = (pb[i] == 1) ? 0u : sb_acc;
                 sb_acc *= pb[i];
             }
@@ -641,25 +644,25 @@ private:
     }
 
 public:
-    VariadicBinary(std::string name) : Operator(std::move(name)) {}
+    VariadicBinary(luisa::string name) : Operator(std::move(name)) {}
 
     /// Variadic ops copy input[0] to output then accumulate; safe for in-place.
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(!inputs.empty() && outputs.size() == 1,
                      "Variadic op requires >=1 inputs and 1 output.");
         auto &out = outputs[0].get();
 
         // Check all inputs and output have same element type
         for (size_t i = 0; i < inputs.size(); ++i) {
-            LUISA_ASSERT(inputs[i].get().element_type() == out.element_type(),
+            LUISA_ASSERT(inputs[i].get().element_type_index() == out.element_type_index(),
                          "Variadic op: all inputs and output must have the same element type.");
         }
 
         // Copy first input to output
-        visit_typeid<TypeList>(inputs[0].get().element_type(), [&]<typename T>() {
+        visit_type_index<TypeList>(inputs[0].get().element_type_index(), [&]<typename T>() {
             auto &first = static_cast<NNTensor<T> &>(inputs[0].get());
             auto &dst = static_cast<NNTensor<T> &>(out);
             using ST = typename NNTensor<T>::value_type;
@@ -698,7 +701,7 @@ public:
         T apply(T a, T b) const { return expr; }         \
     };                                                   \
     REGISTER_TO_DEFAULT_OPSET(Name) {                    \
-        return std::make_unique<Name>();                 \
+        return luisa::make_unique<Name>();                 \
     }
 
 DEFINE_VARIADIC_OP_EX(Min, NNFilteredTypeList<IsNativeArithmetic>, min(a, b));
@@ -710,14 +713,14 @@ class Mean : public Operator {
 public:
     Mean() : Operator("Mean") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(!inputs.empty() && outputs.size() == 1,
                      "Mean requires >=1 inputs and 1 output.");
         auto &out = outputs[0].get();
         auto count = inputs.size();
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(inputs[0].get().element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(inputs[0].get().element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &first = static_cast<NNTensor<T> &>(inputs[0].get());
             auto &dst = static_cast<NNTensor<T> &>(out);
@@ -771,7 +774,7 @@ public:
     }
 };
 REGISTER_TO_DEFAULT_OPSET(Mean) {
-    return std::make_unique<Mean>();
+    return luisa::make_unique<Mean>();
 };
 
 }// namespace lcml::onnx

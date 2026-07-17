@@ -2,13 +2,13 @@
 
 #include "luisa_ml_config.h"
 
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <unordered_set>
-#include <typeindex>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/unordered_map.h>
+#include <luisa/core/stl/memory.h>
+#include <cstdint>
+
 #include <limits>
-#include <memory>
 
 #include "onnx/onnx.h"
 #include "onnx/operator.h"
@@ -32,7 +32,7 @@ struct RegAllocConfig {
     // Greedy coloring: size threshold for preferring smallest color ID
     ElementCount color_large_size_threshold = 32;
     // Local search: maximum iterations for single-move / swap improvement
-    int local_search_max_iterations = 80;
+    int32_t local_search_max_iterations = 80;
     // Color dissolution: maximum members in a color to attempt dissolution
     ColorId dissolution_max_members = 20;
     // Enable diagnostic output summarizing allocation statistics
@@ -51,14 +51,14 @@ struct RegAllocConfig {
 //   Phase F: Build allocation plan
 class LUISA_ONNX_API RegisterAllocator {
 public:
-    using OperatorList = std::vector<std::unique_ptr<Operator>>;
+    using OperatorList = luisa::vector<luisa::unique_ptr<Operator>>;
 
     RegisterAllocator(onnx::Graph const &graph,
                       LastUseMap const &last_use_map,
                       OperatorList const &ops,
                       onnx::StringNodeMap<bool> const &already_bound,
                       RegAllocConfig const &config = {},
-                      std::vector<ExternalSlot> external_slots = {});
+                      luisa::vector<ExternalSlot> external_slots = {});
 
     AllocationPlan run();
 
@@ -68,11 +68,11 @@ private:
     OperatorList const &ops_;
     onnx::StringNodeMap<bool> const &already_bound_;
     RegAllocConfig config_;
-    std::vector<ExternalSlot> external_slots_;
+    luisa::vector<ExternalSlot> external_slots_;
 
     // Virtual ordering: orig_node_idx -> virtual_idx and vice versa
     Schedule schedule_;                     // schedule_[virtual_idx] = orig_node_idx
-    std::vector<NodeIndex> orig_to_virtual_;// orig_to_virtual_[orig_idx] = virtual_idx
+    luisa::vector<NodeIndex> orig_to_virtual_;// orig_to_virtual_[orig_idx] = virtual_idx
 
     // Remapped last-use map using virtual indices
     LastUseMap vlast_use_map_;
@@ -81,44 +81,44 @@ private:
     onnx::StringNodeMap<AllocationUnit> units_;
     UnionFind uf_;
 
-    onnx::StringNodeMap<std::string> inplace_source_map_;
+    onnx::StringNodeMap<luisa::string> inplace_source_map_;
 
     struct RootInfo {
-        std::type_index type_idx = std::type_index(typeid(void));
+        luisa::TypeIndex type_idx;
         ElementCount max_elements = 0;
         NodeIndex merged_def = SIZE_MAX;
         NodeIndex merged_last_use = 0;
         ElementCount size_class = 0;
-        std::vector<std::string> members;
+        luisa::vector<luisa::string> members;
         bool skip = false;
     };
     onnx::StringNodeMap<RootInfo> root_infos_;
 
-    onnx::StringNodeMap<std::unordered_set<std::string>> adj_;
+    onnx::StringNodeMap<luisa::unordered_set<luisa::string>> adj_;
     onnx::StringNodeMap<ColorId> color_map_;
     ColorId num_colors_ = 0;
-    std::vector<size_t> color_external_index_;// Per-color external slot index (SIZE_MAX if owned)
+    luisa::vector<size_t> color_external_index_;// Per-color external slot index (SIZE_MAX if owned)
 
     // ---- Helpers ----
-    bool is_skip_var(std::string const &vn) const;
-    static ElementCount compute_num_elements(std::vector<size_t> const &shape);
+    bool is_skip_var(luisa::string const &vn) const;
+    static ElementCount compute_num_elements(luisa::vector<size_t> const &shape);
 
     // ---- Phase 0 sub-routines ----
     // Scheduling context passed between Phase 0 sub-routines
     struct SchedulingContext {
         size_t N = 0;
         onnx::StringNodeMap<NodeIndex> producer;
-        std::vector<std::vector<std::string>> ext_input_names;
-        std::vector<std::unordered_set<size_t>> successors;
-        std::vector<size_t> in_degree;
+        luisa::vector<luisa::vector<luisa::string>> ext_input_names;
+        luisa::vector<luisa::unordered_set<size_t>> successors;
+        luisa::vector<size_t> in_degree;
         onnx::StringNodeMap<size_t> remaining_consumers;
         onnx::StringNodeMap<size_t> var_size;
-        std::vector<size_t> height;
+        luisa::vector<size_t> height;
     };
 
     static void collect_external_refs_recursive(
         onnx::Graph const &sub_graph,
-        std::unordered_set<std::string> &ext_refs);
+        luisa::unordered_set<luisa::string> &ext_refs);
 
     void build_producer_map(SchedulingContext &ctx) const;
     void build_ext_input_names(SchedulingContext &ctx) const;
@@ -141,7 +141,7 @@ private:
 
     struct InplaceCandidateResult {
         bool accepted = false;
-        std::string best_input;
+        luisa::string best_input;
         ElementCount best_elems = 0;
         int64_t best_net_benefit = 0;
     };
@@ -159,14 +159,14 @@ private:
     // ---- Phase E sub-routines ----
     // Coloring context shared among Phase E sub-routines
     struct ColoringContext {
-        std::vector<std::string> active_roots;
-        std::vector<ElementCount> color_slot_size;
-        std::vector<std::unordered_set<std::string>> color_members;
+        luisa::vector<luisa::string> active_roots;
+        luisa::vector<ElementCount> color_slot_size;
+        luisa::vector<luisa::unordered_set<luisa::string>> color_members;
         // Map from internal color ID -> ExternalSlot::external_index (SIZE_MAX if owned)
-        std::vector<size_t> color_external_index;
+        luisa::vector<size_t> color_external_index;
     };
 
-    bool can_place_root_in_color(std::string const &root, ColorId color) const;
+    bool can_place_root_in_color(luisa::string const &root, ColorId color) const;
     void recompute_color_slot_size(ColoringContext &ctx, ColorId color) const;
     void seed_external_slots(ColoringContext &ctx);
     void initial_greedy_coloring(ColoringContext &ctx);

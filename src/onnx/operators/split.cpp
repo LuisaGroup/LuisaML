@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -18,8 +19,8 @@ public:
         return axis_ == 0;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 1 && !outputs.empty(),
                      "Split requires >=1 input and >=1 outputs.");
@@ -29,7 +30,7 @@ public:
         LUISA_ASSERT(axis >= 0 && axis < static_cast<int64_t>(ndim), "Split axis out of bounds");
 
         for (size_t i = 0; i < outputs.size(); ++i) {
-            LUISA_ASSERT(outputs[i].get().element_type() == data.element_type(),
+            LUISA_ASSERT(outputs[i].get().element_type_index() == data.element_type_index(),
                          "Split: all outputs must have the same element type as input.");
         }
 #else
@@ -38,7 +39,7 @@ public:
         int64_t axis = axis_ < 0 ? axis_ + ndim : axis_;
 #endif
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             using ST = nn_storage_type_t<T>;
 
@@ -261,14 +262,14 @@ REGISTER_TO_DEFAULT_OPSET(Split) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Split>(axis);
+    return luisa::make_unique<Split>(axis);
 };
 
 REGISTER_TO_DEFAULT_OPSET(SplitToSequence) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<SplitToSequence>(axis);
+    return luisa::make_unique<SplitToSequence>(axis);
 };
 
 }// namespace lcml::onnx

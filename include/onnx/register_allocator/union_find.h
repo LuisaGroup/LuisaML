@@ -2,7 +2,9 @@
 
 #include "luisa_ml_config.h"
 
-#include <string>
+#include <luisa/core/stl/string.h>
+#include <utility>
+
 #include "allocation_types.h"
 
 namespace lcml::onnx {
@@ -10,14 +12,14 @@ namespace lcml::onnx {
 // Disjoint-set data structure for merging allocation units
 class UnionFind {
 public:
-    void init(std::string const &x) {
+    void init(luisa::string const &x) {
         if (parent_.find(x) == parent_.end()) {
             parent_[x] = x;
             rank_[x] = 0;
         }
     }
 
-    std::string find(std::string const &x) const {
+    luisa::string find(luisa::string const &x) const {
         auto it = parent_.find(x);
         if (it == parent_.end()) {
             parent_.emplace(x, x);
@@ -30,7 +32,7 @@ public:
         return it->second;
     }
 
-    std::string unite(std::string const &a, std::string const &b) {
+    luisa::string unite(luisa::string const &a, luisa::string const &b) {
         auto ra = find(a);
         auto rb = find(b);
         if (ra == rb) return ra;
@@ -40,12 +42,12 @@ public:
         return ra;
     }
 
-    bool connected(std::string const &a, std::string const &b) const {
+    bool connected(luisa::string const &a, luisa::string const &b) const {
         return find(a) == find(b);
     }
 
 private:
-    mutable onnx::StringNodeMap<std::string> parent_;
+    mutable onnx::StringNodeMap<luisa::string> parent_;
     mutable onnx::StringNodeMap<NodeIndex> rank_;
 };
 

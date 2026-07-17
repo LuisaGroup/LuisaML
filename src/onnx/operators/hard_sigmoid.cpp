@@ -2,6 +2,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 // HardSigmoid: max(0, min(1, alpha * x + beta))
@@ -17,23 +19,23 @@ public:
     /// Element-wise activation: safe for in-place.
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1, "HardSigmoid requires 1 input and 1 output.");
 #endif
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #ifndef NDEBUG
-        LUISA_ASSERT(input.element_type() == output.element_type(), "HardSigmoid: input and output must have the same element type.");
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(), "HardSigmoid: input and output must have the same element type.");
         LUISA_ASSERT(input.size() == output.size(), "HardSigmoid: input and output must have the same size.");
-        LUISA_ASSERT(input.element_type() == typeid(float) || input.element_type() == typeid(half),
+        LUISA_ASSERT(input.element_type_index() == refl::type_index_of<float>() || input.element_type_index() == refl::type_index_of<half>(),
                      "HardSigmoid: unsupported element type");
 #endif
 
         if (input.size() == 0) return;
 
-        visit_typeid<float, half>(input.element_type(), [&]<typename T>() {
+        visit_type_index<float, half>(input.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
@@ -85,7 +87,7 @@ REGISTER_TO_DEFAULT_OPSET(HardSigmoid) {
         alpha = p->get<onnx::AttributeType::FLOAT>();
     if (auto p = node.try_get_attr("beta"))
         beta = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<HardSigmoid>(alpha, beta);
+    return luisa::make_unique<HardSigmoid>(alpha, beta);
 };
 
 }// namespace lcml::onnx

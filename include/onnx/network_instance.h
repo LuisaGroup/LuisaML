@@ -2,9 +2,11 @@
 
 #include "luisa_ml_config.h"
 
-#include <memory>
-#include <functional>
-#include <span>
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/functional.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+
 #include <luisa/runtime/byte_buffer.h>
 #include "onnx.h"
 #include "operators/common.h"
@@ -19,7 +21,7 @@ namespace lcml::onnx {
  *        execution (GPU code generation) can be separated.
  */
 struct PreparedGraph {
-    std::vector<std::unique_ptr<Operator>> ops;
+    luisa::vector<luisa::unique_ptr<Operator>> ops;
     TensorTable tensor_table;
     LastUseMap last_use_map;
     Schedule schedule;
@@ -70,7 +72,7 @@ private:
     ExecutionContext exec_ctx_;
 
     /// @brief Pre-created operators for each graph node.
-    using OperatorList = std::vector<std::unique_ptr<Operator>>;
+    using OperatorList = luisa::vector<luisa::unique_ptr<Operator>>;
 
     /**
      * @brief Pre-create all operator instances for the graph nodes.
@@ -95,7 +97,7 @@ private:
     /**
      * @brief Compute total number of elements from a shape vector.
      */
-    static size_t compute_num_elements(std::vector<size_t> const &shape);
+    static size_t compute_num_elements(luisa::vector<size_t> const &shape);
 
     /**
      * @brief Validate shape and element type of an external tensor against a graph variable,
@@ -144,8 +146,8 @@ private:
         onnx::Graph const &graph,
         LastUseMap const &last_use_map,
         OperatorList const &ops,
-        std::vector<ExternalSlot> external_slots = {},
-        std::vector<ITensor *> external_storages = {});
+        luisa::vector<ExternalSlot> external_slots = {},
+        luisa::vector<ITensor *> external_storages = {});
 
     /**
      * @brief Execute all operators in the given schedule order,
@@ -188,14 +190,14 @@ public:
      * @brief Bind an external tensor as a named input.
      */
     void set_input(std::string_view name, ITensor &tensor) {
-        inputs_.insert_or_assign(std::string{name}, std::ref(tensor));
+        inputs_.insert_or_assign(luisa::string{name}, std::ref(tensor));
     }
 
     /**
      * @brief Bind an external tensor as a named output.
      */
     void set_output(std::string_view name, ITensor &tensor) {
-        outputs_.insert_or_assign(std::string{name}, std::ref(tensor));
+        outputs_.insert_or_assign(luisa::string{name}, std::ref(tensor));
     }
 
     /**
@@ -242,7 +244,7 @@ public:
      *        The returned PreparedGraph can later be executed with execute_prepared_graph.
      */
     PreparedGraph prepare_graph(TensorTable *parent_table, onnx::Graph const &graph,
-                                std::span<std::reference_wrapper<ITensor>> bound_outputs);
+                                luisa::span<std::reference_wrapper<ITensor>> bound_outputs);
 
     /**
      * @brief Execute a previously prepared graph (phase 3 only).
@@ -260,10 +262,10 @@ public:
      *        current execution point (safe for subgraph reuse).  Pass empty to disable
      *        parent-storage reuse.  Caller is responsible for liveness checking.
      */
-    std::vector<PreparedGraph> prepare_exclusive_graphs(
+    luisa::vector<PreparedGraph> prepare_exclusive_graphs(
         TensorTable *parent_table,
-        std::vector<std::pair<onnx::Graph const *, std::span<std::reference_wrapper<ITensor>>>> const &branch_infos,
-        std::vector<ITensor *> const &reusable_parent_storages = {});
+        luisa::vector<std::pair<onnx::Graph const *, luisa::span<std::reference_wrapper<ITensor>>>> const &branch_infos,
+        luisa::vector<ITensor *> const &reusable_parent_storages = {});
 
     /**
      * @brief Execute the neural network forward pass on the model's main graph.
@@ -285,7 +287,7 @@ public:
      *                   (matches the index space used in build_last_use_map).
      * @return A vector of ITensor* pointing to dead parent phantom storages.
      */
-    static std::vector<ITensor *> collect_dead_parent_storages(
+    static luisa::vector<ITensor *> collect_dead_parent_storages(
         TensorTable &tensor_table,
         AllocationPlan const &plan,
         LastUseMap const &last_use_map,

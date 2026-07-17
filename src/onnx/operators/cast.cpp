@@ -3,13 +3,14 @@
 #include "onnx/onnx.h"
 #include "onnx/fp_quantized.h"
 #include <luisa/dsl/sugar.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
 class Cast : public Operator {
 private:
     onnx::DataType to_;
-    int saturate_;
+    int32_t saturate_;
 
     template<typename T1, typename T2>
     void apply(T1 &input, T2 &output) const {
@@ -112,13 +113,13 @@ private:
     }
 
 public:
-    Cast(onnx::DataType to, int saturate)
+    Cast(onnx::DataType to, int32_t saturate)
         : Operator("Cast"), to_(to), saturate_(saturate) {}
 
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Cast requires exactly 1 input and 1 output.");
@@ -131,10 +132,10 @@ public:
                      "Cast: input tensor must not be empty.");
 #endif
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename SrcT>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename SrcT>() {
             auto &in = static_cast<NNTensor<SrcT> &>(input);
             // Fast path: same type and shared storage -> zero-copy bypass
-            if (input.element_type() == output.element_type()) {
+            if (input.element_type_index() == output.element_type_index()) {
                 auto &out = static_cast<NNTensor<SrcT> &>(output);
                 if (in.container().shares_storage_with(out.container())) {
                     return;
@@ -146,8 +147,8 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Cast) {
-    int to = 0;
-    int saturate = 1;
+    int32_t to = 0;
+    int32_t saturate = 1;
 
     auto p_to = node.try_get_attr("to");
     LUISA_ASSERT(p_to != nullptr, "Cast: 'to' attribute is required.");
@@ -157,7 +158,7 @@ REGISTER_TO_DEFAULT_OPSET(Cast) {
         saturate = p->get<onnx::AttributeType::INT>();
     }
 
-    return std::make_unique<Cast>(static_cast<onnx::DataType>(to), saturate);
+    return luisa::make_unique<Cast>(static_cast<onnx::DataType>(to), saturate);
 };
 
 }// namespace lcml::onnx

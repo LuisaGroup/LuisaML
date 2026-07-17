@@ -6,10 +6,12 @@
 #include "onnx/onnx.h"
 #include "onnx/fp_quantized.h"
 
+#include <luisa/core/stl/vector.h>
+
 namespace lcml::onnx {
 using namespace luisa::compute;
 using refl::Value;
-using refl::visit_typeid;
+using refl::visit_type_index;
 
 
 template<typename T>
@@ -35,7 +37,7 @@ struct nn_storage_type<double> {
 };
 template<>
 struct nn_storage_type<slong> {
-    using type = int;
+    using type = int32_t;
 };
 template<>
 struct nn_storage_type<ulong> {
@@ -59,9 +61,9 @@ using NNTypeMapList = std::tuple<
     std::pair<Value<onnx::DataType::FLOAT16>, half>,
     std::pair<Value<onnx::DataType::DOUBLE>, double>,
     std::pair<Value<onnx::DataType::BOOL>, bool>,
-    std::pair<Value<onnx::DataType::INT16>, short>,
+    std::pair<Value<onnx::DataType::INT16>, int16_t>,
     std::pair<Value<onnx::DataType::UINT16>, ushort>,
-    std::pair<Value<onnx::DataType::INT32>, int>,
+    std::pair<Value<onnx::DataType::INT32>, int32_t>,
     std::pair<Value<onnx::DataType::UINT32>, uint>,
     std::pair<Value<onnx::DataType::INT64>, slong>,
     std::pair<Value<onnx::DataType::UINT64>, ulong>,
@@ -139,20 +141,30 @@ constexpr onnx::DataType to_onnx_dtype_impl() {
 template<typename T>
 constexpr onnx::DataType to_onnx_dtype = detail::to_onnx_dtype_impl<T, NNTypeMapList>();
 
-// Runtime: onnx::DataType -> typeid
-inline std::type_info const &onnx_dtype_to_typeid(onnx::DataType dt) {
-    std::type_info const *result = nullptr;
+// Runtime: onnx::DataType -> type index
+inline luisa::TypeIndex onnx_dtype_to_type_index(onnx::DataType dt) {
+    luisa::TypeIndex result = 0;
     auto found = [&]<size_t... Is>(std::index_sequence<Is...>) {
-        return ((std::tuple_element_t<Is, NNTypeMapList>::first_type::value == dt ? (result = &typeid(typename std::tuple_element_t<Is, NNTypeMapList>::second_type), true) : false) || ...);
+        return ((std::tuple_element_t<Is, NNTypeMapList>::first_type::value == dt ? (result = refl::type_index_of<typename std::tuple_element_t<Is, NNTypeMapList>::second_type>(), true) : false) || ...);
     }(std::make_index_sequence<std::tuple_size_v<NNTypeMapList>>{});
     LUISA_ASSERT(found, "Unsupported ONNX DataType: {}", magic_enum::enum_name(dt));
-    return *result;
+    return result;
 }
 
-// Runtime: onnx::DataType -> visit with typed lambda (like visit_typeid but keyed by enum)
+// Runtime: onnx::DataType -> type name
+inline std::string_view onnx_dtype_to_type_name(onnx::DataType dt) {
+    std::string_view result;
+    auto found = [&]<size_t... Is>(std::index_sequence<Is...>) {
+        return ((std::tuple_element_t<Is, NNTypeMapList>::first_type::value == dt ? (result = refl::type_name_v<typename std::tuple_element_t<Is, NNTypeMapList>::second_type>, true) : false) || ...);
+    }(std::make_index_sequence<std::tuple_size_v<NNTypeMapList>>{});
+    LUISA_ASSERT(found, "Unsupported ONNX DataType: {}", magic_enum::enum_name(dt));
+    return result;
+}
+
+// Runtime: onnx::DataType -> visit with typed lambda (like visit_type_index but keyed by enum)
 template<typename F>
 auto visit_onnx_dtype(onnx::DataType dt, F &&f) -> decltype(auto) {
-    return visit_typeid<NNTypeList>(onnx_dtype_to_typeid(dt), std::forward<F>(f));
+    return visit_type_index<NNTypeList>(onnx_dtype_to_type_index(dt), std::forward<F>(f));
 }
 
 // Forward declaration for vectorized component-wise application
@@ -518,7 +530,7 @@ template<typename ST, typename I, typename O, typename F>
 void vectorized_broadcast_unary(I &in, O &out,
                                 ITensor::shape_type const &out_shape,
                                 uint32_t out_ndim,
-                                std::vector<uint32_t> const &in_stride,
+                                luisa::vector<uint32_t> const &in_stride,
                                 F &&f) {
     using VecT = typename VecDispatch<ST>::VecT;
     auto buf_in = in.container().get_byte_buffer();
@@ -564,8 +576,8 @@ template<typename ST, typename A, typename B, typename O, typename F>
 void vectorized_broadcast_2in(A &a, B &b, O &out,
                               ITensor::shape_type const &out_shape,
                               uint32_t out_ndim,
-                              std::vector<uint32_t> const &stride_a,
-                              std::vector<uint32_t> const &stride_b,
+                              luisa::vector<uint32_t> const &stride_a,
+                              luisa::vector<uint32_t> const &stride_b,
                               F &&f) {
     using VecT = typename VecDispatch<ST>::VecT;
     auto buf_a = a.container().get_byte_buffer();
@@ -620,7 +632,7 @@ template<typename ST, typename ACC, typename B, typename F>
 void vectorized_broadcast_1in_acc(ACC &acc, B &b,
                                   ITensor::shape_type const &out_shape,
                                   uint32_t out_ndim,
-                                  std::vector<uint32_t> const &stride_b,
+                                  luisa::vector<uint32_t> const &stride_b,
                                   F &&f) {
     using VecT = typename VecDispatch<ST>::VecT;
     auto buf_acc = acc.container().get_byte_buffer();

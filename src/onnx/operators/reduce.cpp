@@ -1,3 +1,6 @@
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/memory.h>
 #include <limits>
 
 #include "onnx/operator.h"
@@ -12,15 +15,15 @@ namespace lcml::onnx {
 template<typename Derived>
 class ReduceBase : public Operator {
 protected:
-    std::vector<int> axes_;
-    int keepdims_;
-    int noop_with_empty_axes_;
+    luisa::vector<int32_t> axes_;
+    int32_t keepdims_;
+    int32_t noop_with_empty_axes_;
 
 public:
     uint warp_size_ = 0;
 
 public:
-    ReduceBase(std::string name, std::vector<int> axes, int keepdims, int noop_with_empty_axes)
+    ReduceBase(luisa::string name, luisa::vector<int32_t> axes, int32_t keepdims, int32_t noop_with_empty_axes)
         : Operator(std::move(name)), axes_(std::move(axes)),
           keepdims_(keepdims), noop_with_empty_axes_(noop_with_empty_axes) {}
 
@@ -32,23 +35,23 @@ public:
         warp_size_ = size;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() >= 1 && outputs.size() == 1, "Reduce op requires >=1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
 
-        LUISA_ASSERT(X.element_type() == Y.element_type(), "Reduce op: input and output must have the same element type.");
+        LUISA_ASSERT(X.element_type_index() == Y.element_type_index(), "Reduce op: input and output must have the same element type.");
 
         auto const &x_shape = X.shape();
         auto ndim = x_shape.size();
 
         // Resolve axes
-        std::vector<int> axes = axes_;
+        luisa::vector<int32_t> axes = axes_;
 
         // If axes is empty and noop_with_empty_axes, just copy
         if (axes.empty() && noop_with_empty_axes_) {
-            visit_typeid<NNTypeList>(X.element_type(), [&]<typename T>() {
+            visit_type_index<NNTypeList>(X.element_type_index(), [&]<typename T>() {
                 auto &x = static_cast<NNTensor<T> &>(X);
                 auto &y = static_cast<NNTensor<T> &>(Y);
                 using VT = nn_storage_type_t<T>;
@@ -68,16 +71,16 @@ public:
         // If axes empty, reduce all dims
         if (axes.empty()) {
             for (uint32_t d = 0; d < ndim; ++d)
-                axes.push_back(static_cast<int>(d));
+                axes.push_back(static_cast<int32_t>(d));
         }
 
         // Normalize negative axes
         for (auto &a : axes) {
-            if (a < 0) a += static_cast<int>(ndim);
+            if (a < 0) a += static_cast<int32_t>(ndim);
         }
 
         // Create a boolean mask for reduced dims
-        std::vector<bool> reduce_dim(ndim, false);
+        luisa::vector<bool> reduce_dim(ndim, false);
         for (auto a : axes) reduce_dim[a] = true;
 
         // Compute reduced size
@@ -90,7 +93,7 @@ public:
         // and reduced dims (reduced-space linear index -> input offset remap)
         ITensor::shape_type kept_out_strides, kept_in_strides;
         ITensor::shape_type reduced_strides, reduced_in_strides;
-        std::vector<uint32_t> reduced_sizes;
+        luisa::vector<uint32_t> reduced_sizes;
 
         uint32_t out_d = 0;
         auto const &y_strides = Y.strides();
@@ -113,7 +116,7 @@ public:
         if (!reduced_sizes.empty()) {
             reduced_strides.resize(reduced_sizes.size());
             reduced_strides.back() = 1;
-            for (int i = static_cast<int>(reduced_sizes.size()) - 2; i >= 0; --i) {
+            for (int32_t i = static_cast<int32_t>(reduced_sizes.size()) - 2; i >= 0; --i) {
                 reduced_strides[i] = reduced_strides[i + 1] * reduced_sizes[i + 1];
             }
         }
@@ -193,7 +196,7 @@ using AppendFPQuantizedT = typename AppendFPQuantized<Tuple>::type;
                          QInitExpr, QAccumExpr, QFinalExpr)                                                                                                       \
     class Name : public ReduceBase<Name> {                                                                                                    \
     public:                                                                                                    \
-        Name(std::vector<int> axes, int keepdims, int noop)                                                                                                    \
+        Name(luisa::vector<int32_t> axes, int32_t keepdims, int32_t noop)                                                                                                    \
             : ReduceBase(#Name, std::move(axes), keepdims, noop) {}                                                                                               \
                                                                                                     \
         void reduce_impl(ITensor &X, ITensor &Y,                                                                                                    \
@@ -202,7 +205,7 @@ using AppendFPQuantizedT = typename AppendFPQuantized<Tuple>::type;
                          ITensor::shape_type const &reduced_strides,                                                                                              \
                          ITensor::shape_type const &reduced_in_strides, uint32_t reduced_ndim,                                                                    \
                          uint32_t reduced_size) {                                                                                                    \
-            visit_typeid<TypeList>(X.element_type(), [&]<typename T>() {                                                                                          \
+            visit_type_index<TypeList>(X.element_type_index(), [&]<typename T>() {                                                                                          \
                 using VT = nn_storage_type_t<T>;                                                                                                    \
                 auto &x = static_cast<NNTensor<T> &>(X);                                                                                                    \
                 auto &y = static_cast<NNTensor<T> &>(Y);                                                                                                    \
@@ -400,15 +403,15 @@ using AppendFPQuantizedT = typename AppendFPQuantized<Tuple>::type;
         }                                                                                                    \
     };                                                                                                    \
     REGISTER_TO_DEFAULT_OPSET(Name) {                                                                                                    \
-        std::vector<int> axes;                                                                                                    \
-        int keepdims = 1, noop = 0;                                                                                                    \
+        luisa::vector<int32_t> axes;                                                                                                    \
+        int32_t keepdims = 1, noop = 0;                                                                                                    \
         if (auto p = node.try_get_attr("axes"))                                                                                                    \
             axes = p->get<onnx::AttributeType::INTS>();                                                                                                    \
         if (auto p = node.try_get_attr("keepdims"))                                                                                                    \
             keepdims = p->get<onnx::AttributeType::INT>();                                                                                                    \
         if (auto p = node.try_get_attr("noop_with_empty_axes"))                                                                                                   \
             noop = p->get<onnx::AttributeType::INT>();                                                                                                    \
-        return std::make_unique<Name>(std::move(axes), keepdims, noop);                                                                                           \
+        return luisa::make_unique<Name>(std::move(axes), keepdims, noop);                                                                                           \
     }
 
 DEFINE_REDUCE_OP(ReduceSum,

@@ -1,6 +1,7 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -16,8 +17,8 @@ public:
     bool is_output_view([[maybe_unused]] size_t output_index,
                         [[maybe_unused]] onnx::Node const &node) const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Flatten requires 1 input and 1 output.");
@@ -27,11 +28,11 @@ public:
 #ifndef NDEBUG
         LUISA_ASSERT(input.size() == output.size(),
                      "Flatten: input and output must have the same total size.");
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Flatten: input and output must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             // If already sharing storage (inplace allocation), skip assignment
@@ -90,7 +91,7 @@ public:
             } else if (in.container().is_byte_buffer() && out.container().is_byte_buffer()) {
                 // Generic raw byte vectorized copy for all other types.
                 // Uses uint4 (16 bytes) chunks plus uint remainder words.
-                // This is optimal for float/half/int/uint/etc. and avoids the
+                // This is optimal for float/half/int32_t/uint/etc. and avoids the
                 // ByteBuffer write-back issue in the scalar fallback path.
                 auto buf_in = in.container().get_byte_buffer();
                 auto buf_out = out.container().get_byte_buffer();
@@ -124,7 +125,7 @@ REGISTER_TO_DEFAULT_OPSET(Flatten) {
     int64_t axis = 1;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Flatten>(axis);
+    return luisa::make_unique<Flatten>(axis);
 };
 
 }// namespace lcml::onnx

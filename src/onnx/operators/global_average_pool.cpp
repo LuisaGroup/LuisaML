@@ -3,6 +3,8 @@
 #include "onnx/onnx.h"
 #include "onnx/fp_quantized.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 // GlobalAveragePool: computes the average of all spatial elements for each channel.
@@ -11,8 +13,8 @@ class GlobalAveragePool : public Operator {
 public:
     GlobalAveragePool() : Operator("GlobalAveragePool") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "GlobalAveragePool requires 1 input and 1 output.");
@@ -32,7 +34,7 @@ public:
         for (size_t i = 2; i < x_shape.size(); ++i)
             spatial_size *= x_shape[i];
 
-        visit_typeid<NNTypeList>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &y = static_cast<NNTensor<T> &>(Y);
@@ -146,7 +148,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(GlobalAveragePool) {
-    return std::make_unique<GlobalAveragePool>();
+    return luisa::make_unique<GlobalAveragePool>();
 };
 
 }// namespace lcml::onnx

@@ -1,6 +1,7 @@
 #pragma once
 #include "luisa_ml_config.h"
 #include <cstddef>
+#include <utility>
 
 namespace luisa::compute::dynamic_array {
 

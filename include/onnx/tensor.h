@@ -3,16 +3,17 @@
 #include "luisa_ml_config.h"
 
 #include <array>
-#include <vector>
 #include <numeric>
 #include <stdexcept>
-#include <span>
 #include <type_traits>
-// NOTE: typeinfo is required for the type-dispatch system. This violates the project's no-RTTI rule.
-#include <typeinfo>
+
 #include <luisa/core/logging.h>
 #include <luisa/core/mathematics.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 #include <luisa/dsl/sugar.h>
+
+#include "onnx/type_dispatch.h"
 
 namespace lcml::onnx {
 
@@ -23,7 +24,7 @@ namespace lcml::onnx {
 class ITensor {
 public:
     using size_type = uint32_t;
-    using shape_type = std::vector<size_type>;
+    using shape_type = luisa::vector<size_type>;
 
 protected:
     shape_type shape_;  // Dimensions of the tensor
@@ -48,7 +49,7 @@ protected:
     }
 
     // Convert multi-dimensional index to linear index
-    size_type linear_index_impl(const std::vector<size_type> &indices) const {
+    size_type linear_index_impl(const luisa::vector<size_type> &indices) const {
         size_type index = 0;
         for (size_t i = 0; i < indices.size(); ++i) {
             index += indices[i] * strides_[i];
@@ -104,13 +105,13 @@ public:
     }
 
     // Reshape with span
-    void reshape(std::span<size_type> new_shape) {
+    void reshape(luisa::span<size_type> new_shape) {
         reshape(shape_type(new_shape.begin(), new_shape.end()));
     }
 
     // Convert linear index to multi-dimensional index
-    std::vector<size_type> unravel_index(size_type linear_idx) const {
-        std::vector<size_type> indices(shape_.size());
+    luisa::vector<size_type> unravel_index(size_type linear_idx) const {
+        luisa::vector<size_type> indices(shape_.size());
         for (size_t i = 0; i < shape_.size(); ++i) {
             indices[i] = linear_idx / strides_[i];
             linear_idx %= strides_[i];
@@ -118,8 +119,11 @@ public:
         return indices;
     }
 
-    // Get the type_info of the element type T (pure virtual)
-    virtual std::type_info const &element_type() const noexcept = 0;
+    // Get the type index of the element type T (pure virtual)
+    virtual luisa::TypeIndex element_type_index() const noexcept = 0;
+
+    // Get the type name of the element type T (pure virtual)
+    virtual std::string_view element_type_name() const noexcept = 0;
 
     virtual void set_name(std::string_view name) const noexcept {}
 
@@ -141,7 +145,7 @@ protected:
     }
 
     // Constructor with span shape
-    explicit ITensor(std::span<size_type> shape)
+    explicit ITensor(luisa::span<size_type> shape)
         : shape_(shape.begin(), shape.end()) {
         compute_strides();
     }
@@ -158,7 +162,7 @@ protected:
  * @tparam T The element type stored in the tensor.
  * @tparam Container The underlying container type (must support size() and operator[]).
  */
-template<typename T, typename Container = std::vector<T>>
+template<typename T, typename Container = luisa::vector<T>>
 class Tensor : public ITensor {
 public:
     // Type aliases
@@ -236,7 +240,7 @@ public:
         : ITensor(std::move(shape)), data_(std::move(data)) {}
 
     // Constructor with span for shape and existing container (move)
-    Tensor(std::span<size_type> shape, Container data)
+    Tensor(luisa::span<size_type> shape, Container data)
         : ITensor(shape), data_(std::move(data)) {}
 
     // Copy constructor
@@ -259,9 +263,14 @@ public:
     // Get the total number of elements
     size_type size() const noexcept override { return data_.size(); }
 
-    // Get the type_info of the element type T
-    std::type_info const &element_type() const noexcept override {
-        return typeid(T);
+    // Get the type index of the element type T
+    luisa::TypeIndex element_type_index() const noexcept override {
+        return refl::type_index_of<T>();
+    }
+
+    // Get the type name of the element type T
+    std::string_view element_type_name() const noexcept override {
+        return refl::type_name_v<T>;
     }
 
     // Forward is_view / is_local to the container if it supports them
@@ -310,11 +319,11 @@ public:
     }
 
     // Access element with vector of indices
-    reference at(const std::vector<size_type> &indices) {
+    reference at(const luisa::vector<size_type> &indices) {
         return data_[linear_index_impl(indices)];
     }
 
-    const_reference at(const std::vector<size_type> &indices) const {
+    const_reference at(const luisa::vector<size_type> &indices) const {
         return data_[linear_index_impl(indices)];
     }
     // Linear access with DSL index types (e.g. UInt)
@@ -342,9 +351,10 @@ public:
 
     // Swap with another tensor
     void swap(Tensor &other) noexcept {
-        std::swap(data_, other.data_);
-        std::swap(shape_, other.shape_);
-        std::swap(strides_, other.strides_);
+        using std::swap;
+        swap(data_, other.data_);
+        swap(shape_, other.shape_);
+        swap(strides_, other.strides_);
     }
 };
 
@@ -363,7 +373,7 @@ public:
     using typename Base::container_type;
 
 private:
-    std::vector<storage_type> storage_data_;
+    luisa::vector<storage_type> storage_data_;
 
 public:
     /**
@@ -372,7 +382,7 @@ public:
      * @param data    The DynamicArray container (GPU-side)
      * @param cpu_data A vector holding the same constant values on CPU
      */
-    ConstTensor(shape_type shape, container_type data, std::vector<storage_type> cpu_data)
+    ConstTensor(shape_type shape, container_type data, luisa::vector<storage_type> cpu_data)
         : Base(std::move(shape), std::move(data)),
           storage_data_(std::move(cpu_data)) {}
 
@@ -390,7 +400,7 @@ public:
     [[nodiscard]] bool is_constant() const noexcept override { return true; }
 
     /// @brief Access the CPU-side constant data.
-    [[nodiscard]] std::vector<storage_type> const &const_data() const noexcept {
+    [[nodiscard]] luisa::vector<storage_type> const &const_data() const noexcept {
         return storage_data_;
     }
 };

@@ -2,6 +2,9 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/string.h>
+
 namespace lcml::onnx {
 
 // NonMaxSuppression: selects bounding boxes based on score and overlap thresholds.
@@ -10,13 +13,13 @@ namespace lcml::onnx {
 // Output: selected_indices (num_selected, 3) where each row = [batch_index, class_index, box_index]
 class NonMaxSuppression : public Operator {
 private:
-    int center_point_box_;
+    int32_t center_point_box_;
 
 public:
-    NonMaxSuppression(int center_point_box) : Operator("NonMaxSuppression"), center_point_box_(center_point_box) {}
+    NonMaxSuppression(int32_t center_point_box) : Operator("NonMaxSuppression"), center_point_box_(center_point_box) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() >= 2 && outputs.size() == 1,
                      "NonMaxSuppression requires >=2 inputs and 1 output.");
 
@@ -48,11 +51,11 @@ public:
         auto &y = static_cast<NNTensor<int> &>(Y);
 
 #ifndef NDEBUG
-        LUISA_ASSERT(boxes_t.element_type() == scores_t.element_type(),
+        LUISA_ASSERT(boxes_t.element_type_index() == scores_t.element_type_index(),
                      "NonMaxSuppression: boxes and scores must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(boxes_t.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(boxes_t.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             using CT = std::conditional_t<
                 std::is_same_v<T, FP4E2M1> || std::is_same_v<T, FP8E4M3FN> ||
@@ -283,10 +286,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(NonMaxSuppression) {
-    int center_point_box = 0;
+    int32_t center_point_box = 0;
     if (auto p = node.try_get_attr("center_point_box"))
         center_point_box = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<NonMaxSuppression>(center_point_box);
+    return luisa::make_unique<NonMaxSuppression>(center_point_box);
 };
 
 // RoiAlign: Region of Interest Align pooling.
@@ -294,20 +297,20 @@ REGISTER_TO_DEFAULT_OPSET(NonMaxSuppression) {
 // Attributes: mode ("avg"/"max"), output_height, output_width, sampling_ratio, spatial_scale
 class RoiAlign : public Operator {
 private:
-    std::string mode_;
+    luisa::string mode_;
     int64_t output_height_;
     int64_t output_width_;
     int64_t sampling_ratio_;
     float spatial_scale_;
 
 public:
-    RoiAlign(std::string mode, int64_t oh, int64_t ow, int64_t sr, float ss)
+    RoiAlign(luisa::string mode, int64_t oh, int64_t ow, int64_t sr, float ss)
         : Operator("RoiAlign"), mode_(std::move(mode)),
           output_height_(oh), output_width_(ow),
           sampling_ratio_(sr), spatial_scale_(ss) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 3 && outputs.size() == 1,
                      "RoiAlign requires 3 inputs and 1 output.");
         auto &X = inputs[0].get();
@@ -318,7 +321,7 @@ public:
         uint32_t oH = static_cast<uint32_t>(output_height_);
         uint32_t oW = static_cast<uint32_t>(output_width_);
 
-        LUISA_ASSERT(X.element_type() == inputs[1].get().element_type() && X.element_type() == Y.element_type(),
+        LUISA_ASSERT(X.element_type_index() == inputs[1].get().element_type_index() && X.element_type_index() == Y.element_type_index(),
                      "RoiAlign: X, rois and Y must have the same element type.");
 
         // Improved adaptive sampling ratio: use feature-map scale estimate when sampling_ratio == 0
@@ -337,7 +340,7 @@ public:
             sr_w = std::max(1u, ceil_positive(est_w));
         }
 
-        visit_typeid<NNTypeList>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             using CT = std::conditional_t<
                 std::is_same_v<T, FP4E2M1> || std::is_same_v<T, FP8E4M3FN> ||
@@ -524,7 +527,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(RoiAlign) {
-    std::string mode = "avg";
+    luisa::string mode = "avg";
     int64_t oh = 1, ow = 1, sr = 0;
     float ss = 1.0f;
     if (auto p = node.try_get_attr("mode")) mode = p->get<onnx::AttributeType::STRING>();
@@ -532,7 +535,7 @@ REGISTER_TO_DEFAULT_OPSET(RoiAlign) {
     if (auto p = node.try_get_attr("output_width")) ow = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("sampling_ratio")) sr = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("spatial_scale")) ss = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<RoiAlign>(std::move(mode), oh, ow, sr, ss);
+    return luisa::make_unique<RoiAlign>(std::move(mode), oh, ow, sr, ss);
 };
 
 }// namespace lcml::onnx

@@ -1,3 +1,5 @@
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -42,14 +44,14 @@ public:
         }
 
         // Parse constant int values from raw_data
-        auto parse_ints = [](onnx::Variable const &var) -> std::vector<int> {
+        auto parse_ints = [](onnx::Variable const &var) -> luisa::vector<int32_t> {
             auto const &raw = var.get_raw_data();
             size_t n = 1;
             for (auto d : var.get_shape()) n *= d;
-            std::vector<int> result(n);
+            luisa::vector<int32_t> result(n);
             if (var.get_dtype() == onnx::DataType::INT64) {
                 auto const *src = reinterpret_cast<int64_t const *>(raw.data());
-                for (size_t i = 0; i < n; ++i) result[i] = static_cast<int>(src[i]);
+                for (size_t i = 0; i < n; ++i) result[i] = static_cast<int32_t>(src[i]);
             } else {
                 auto const *src = reinterpret_cast<int32_t const *>(raw.data());
                 for (size_t i = 0; i < n; ++i) result[i] = src[i];
@@ -61,7 +63,7 @@ public:
         auto ends = parse_ints(ends_var);
         size_t num_slices = starts.size();
 
-        std::vector<int> axes_vec, steps_vec;
+        luisa::vector<int32_t> axes_vec, steps_vec;
         if (has_axes) axes_vec = parse_ints(inputs[3].get());
         if (has_steps) {
             steps_vec = parse_ints(inputs[4].get());
@@ -72,16 +74,16 @@ public:
         }
 
         // Find the single sliced axis (non-full-range axis)
-        int sole_axis = -1;
-        int sole_start = 0;
+        int32_t sole_axis = -1;
+        int32_t sole_start = 0;
         for (size_t s = 0; s < num_slices; ++s) {
-            int ax = has_axes ? axes_vec[s] : static_cast<int>(s);
-            if (ax < 0) ax += static_cast<int>(ndim);
-            if (ax < 0 || ax >= static_cast<int>(ndim)) return false;
+            int32_t ax = has_axes ? axes_vec[s] : static_cast<int32_t>(s);
+            if (ax < 0) ax += static_cast<int32_t>(ndim);
+            if (ax < 0 || ax >= static_cast<int32_t>(ndim)) return false;
 
-            int sv = starts[s];
-            int ev = ends[s];
-            int dim_size = static_cast<int>(data_shape[ax]);
+            int32_t sv = starts[s];
+            int32_t ev = ends[s];
+            int32_t dim_size = static_cast<int32_t>(data_shape[ax]);
             if (sv < 0) sv += dim_size;
             if (ev < 0) ev += dim_size;
             sv = std::max(0, std::min(sv, dim_size));
@@ -103,13 +105,13 @@ public:
         // View only if the sliced region is contiguous: axis must be 0
         // (or equivalently, outer_count == 1, meaning all dims before axis are 1)
         size_t outer_count = 1;
-        for (int d = 0; d < sole_axis; ++d)
+        for (int32_t d = 0; d < sole_axis; ++d)
             outer_count *= data_shape[d];
         return outer_count == 1;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 3 && inputs.size() <= 5 && outputs.size() == 1,
                      "Slice requires 3-5 inputs and 1 output.");
@@ -117,11 +119,11 @@ public:
         auto &output = outputs[0].get();
         auto ndim = data.ndim();
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "Slice: data and output must have the same element type.");
-        LUISA_ASSERT(inputs[1].get().element_type() == typeid(int) || inputs[1].get().element_type() == typeid(slong),
+        LUISA_ASSERT(inputs[1].get().element_type_index() == refl::type_index_of<int32_t>() || inputs[1].get().element_type_index() == refl::type_index_of<slong>(),
                      "Slice: starts must be int or int64 type.");
-        LUISA_ASSERT(inputs[2].get().element_type() == typeid(int) || inputs[2].get().element_type() == typeid(slong),
+        LUISA_ASSERT(inputs[2].get().element_type_index() == refl::type_index_of<int32_t>() || inputs[2].get().element_type_index() == refl::type_index_of<slong>(),
                      "Slice: ends must be int or int64 type.");
 #else
         auto &data = inputs[0].get();
@@ -130,8 +132,8 @@ public:
 #endif
 
         // Read starts, ends from input tensors (int type)
-        auto &starts_t = static_cast<NNTensor<int> &>(inputs[1].get());
-        auto &ends_t = static_cast<NNTensor<int> &>(inputs[2].get());
+        auto &starts_t = static_cast<NNTensor<int32_t> &>(inputs[1].get());
+        auto &ends_t = static_cast<NNTensor<int32_t> &>(inputs[2].get());
         auto num_slices = starts_t.size();
 
         // Default axes = [0, 1, ..., num_slices-1], default steps = [1, ...]
@@ -145,10 +147,10 @@ public:
 
         // Build per-dimension start and step using DSL values from input tensors
         // For dimensions not in the axes list, start=0 and step=1
-        auto &axes_t = has_axes ? static_cast<NNTensor<int> &>(inputs[3].get()) : starts_t;
-        auto &steps_t = has_steps ? static_cast<NNTensor<int> &>(inputs[4].get()) : starts_t;
+        auto &axes_t = has_axes ? static_cast<NNTensor<int32_t> &>(inputs[3].get()) : starts_t;
+        auto &steps_t = has_steps ? static_cast<NNTensor<int32_t> &>(inputs[4].get()) : starts_t;
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = nn_storage_type_t<T>;
@@ -166,34 +168,34 @@ public:
                 if (has_axes && !inputs[3].get().is_constant())
                     return false;
 
-                auto &starts_const = static_cast<NNConstTensor<int> const &>(inputs[1].get());
-                auto &ends_const = static_cast<NNConstTensor<int> const &>(inputs[2].get());
+                auto &starts_const = static_cast<NNConstTensor<int32_t> const &>(inputs[1].get());
+                auto &ends_const = static_cast<NNConstTensor<int32_t> const &>(inputs[2].get());
                 auto num_s = starts_const.const_data().size();
 
                 // Verify: only ONE axis is sliced, step must be 1
-                int sole_axis = -1;
-                int sole_start = 0;
+                int32_t sole_axis = -1;
+                int32_t sole_start = 0;
                 for (size_t s = 0; s < num_s; ++s) {
-                    int ax = has_axes ?
-                                 static_cast<NNConstTensor<int> const &>(inputs[3].get()).const_data()[s] :
-                                 static_cast<int>(s);
-                    if (ax < 0) ax += static_cast<int>(ndim);
+                    int32_t ax = has_axes ?
+                                 static_cast<NNConstTensor<int32_t> const &>(inputs[3].get()).const_data()[s] :
+                                 static_cast<int32_t>(s);
+                    if (ax < 0) ax += static_cast<int32_t>(ndim);
 
                     if (has_steps) {
-                        int step = static_cast<NNConstTensor<int> const &>(inputs[4].get()).const_data()[s];
+                        int32_t step = static_cast<NNConstTensor<int32_t> const &>(inputs[4].get()).const_data()[s];
                         if (step != 1) return false;
                     }
 
-                    int sv = starts_const.const_data()[s];
-                    int ev = ends_const.const_data()[s];
-                    if (sv < 0) sv += static_cast<int>(in.shape()[ax]);
-                    if (ev < 0) ev += static_cast<int>(in.shape()[ax]);
+                    int32_t sv = starts_const.const_data()[s];
+                    int32_t ev = ends_const.const_data()[s];
+                    if (sv < 0) sv += static_cast<int32_t>(in.shape()[ax]);
+                    if (ev < 0) ev += static_cast<int32_t>(in.shape()[ax]);
                     // Clamp
-                    sv = std::max(0, std::min(sv, static_cast<int>(in.shape()[ax])));
-                    ev = std::max(0, std::min(ev, static_cast<int>(in.shape()[ax])));
+                    sv = std::max(0, std::min(sv, static_cast<int32_t>(in.shape()[ax])));
+                    ev = std::max(0, std::min(ev, static_cast<int32_t>(in.shape()[ax])));
 
                     // If this axis slice covers the full dimension, skip it (no-op)
-                    if (sv == 0 && ev >= static_cast<int>(in.shape()[ax]))
+                    if (sv == 0 && ev >= static_cast<int32_t>(in.shape()[ax]))
                         continue;
 
                     // More than one axis is being sliced -> fall back
@@ -338,34 +340,34 @@ public:
                 if (has_axes && !inputs[3].get().is_constant())
                     return false;
 
-                auto &starts_const = static_cast<NNConstTensor<int> const &>(inputs[1].get());
+                auto &starts_const = static_cast<NNConstTensor<int32_t> const &>(inputs[1].get());
                 auto num_s = starts_const.const_data().size();
 
-                std::vector<int> cpu_starts(ndim, 0);
-                std::vector<int> cpu_steps(ndim, 1);
+                luisa::vector<int32_t> cpu_starts(ndim, 0);
+                luisa::vector<int32_t> cpu_steps(ndim, 1);
 
                 for (size_t s = 0; s < num_s; ++s) {
-                    int ax = has_axes ?
-                                 static_cast<NNConstTensor<int> const &>(inputs[3].get()).const_data()[s] :
-                                 static_cast<int>(s);
-                    if (ax < 0) ax += static_cast<int>(ndim);
-                    if (ax < 0 || ax >= static_cast<int>(ndim)) continue;
+                    int32_t ax = has_axes ?
+                                 static_cast<NNConstTensor<int32_t> const &>(inputs[3].get()).const_data()[s] :
+                                 static_cast<int32_t>(s);
+                    if (ax < 0) ax += static_cast<int32_t>(ndim);
+                    if (ax < 0 || ax >= static_cast<int32_t>(ndim)) continue;
 
-                    int sv = starts_const.const_data()[s];
-                    int dim_size = static_cast<int>(in.shape()[ax]);
+                    int32_t sv = starts_const.const_data()[s];
+                    int32_t dim_size = static_cast<int32_t>(in.shape()[ax]);
                     if (sv < 0) sv += dim_size;
                     sv = std::max(0, std::min(sv, dim_size));
 
-                    int step = has_steps ?
-                                   static_cast<NNConstTensor<int> const &>(inputs[4].get()).const_data()[s] :
+                    int32_t step = has_steps ?
+                                   static_cast<NNConstTensor<int32_t> const &>(inputs[4].get()).const_data()[s] :
                                    1;
 
                     cpu_starts[ax] = sv;
                     cpu_steps[ax] = step;
                 }
 
-                DynamicArray<int> dim_starts(ndim);
-                DynamicArray<int> dim_steps(ndim);
+                DynamicArray<int32_t> dim_starts(ndim);
+                DynamicArray<int32_t> dim_steps(ndim);
                 for (uint32_t d = 0; d < ndim; ++d) {
                     dim_starts[d] = cpu_starts[d];
                     dim_steps[d] = cpu_steps[d];
@@ -450,8 +452,8 @@ public:
             if (try_const_optimized_path()) return;
 
             // Dynamic slow path: build dim_starts/dim_steps with DSL branches
-            DynamicArray<int> dim_starts(ndim);
-            DynamicArray<int> dim_steps(ndim);
+            DynamicArray<int32_t> dim_starts(ndim);
+            DynamicArray<int32_t> dim_steps(ndim);
             for (uint32_t d = 0; d < ndim; ++d) {
                 dim_starts[d] = 0;
                 dim_steps[d] = 1;
@@ -520,7 +522,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Slice) {
-    return std::make_unique<Slice>();
+    return luisa::make_unique<Slice>();
 };
 
 // DynamicSlice: same as Slice but with dynamic inputs
@@ -529,14 +531,14 @@ class DynamicSlice : public Operator {
 public:
     DynamicSlice() : Operator("DynamicSlice") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 3 && outputs.size() == 1,
                      "DynamicSlice requires >=3 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "DynamicSlice: data and output must have the same element type.");
 #else
         auto &data = inputs[0].get();
@@ -544,20 +546,20 @@ public:
 #endif
         auto ndim = data.ndim();
 
-        auto &starts_t = static_cast<NNTensor<int> &>(inputs[1].get());
-        auto &ends_t = static_cast<NNTensor<int> &>(inputs[2].get());
+        auto &starts_t = static_cast<NNTensor<int32_t> &>(inputs[1].get());
+        auto &ends_t = static_cast<NNTensor<int32_t> &>(inputs[2].get());
         auto num_slices = starts_t.size();
         bool has_axes = (inputs.size() >= 4 && inputs[3].get().size() > 0);
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = nn_storage_type_t<T>;
 
             if (in.container().shares_storage_with(out.container())) return;
 
-            DynamicArray<int> dim_starts(ndim);
-            DynamicArray<int> dim_steps(ndim);
+            DynamicArray<int32_t> dim_starts(ndim);
+            DynamicArray<int32_t> dim_steps(ndim);
             for (uint32_t d = 0; d < ndim; ++d) {
                 dim_starts[d] = 0;
                 dim_steps[d] = 1;
@@ -565,7 +567,7 @@ public:
 
             for (uint32_t s = 0; s < num_slices; ++s) {
                 Int axis_val = has_axes ?
-                                   static_cast<NNTensor<int> &>(inputs[3].get())[s] :
+                                   static_cast<NNTensor<int32_t> &>(inputs[3].get())[s] :
                                    Int{static_cast<int>(s)};
                 Int start_val = starts_t[s];
 
@@ -613,7 +615,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(DynamicSlice) {
-    return std::make_unique<DynamicSlice>();
+    return luisa::make_unique<DynamicSlice>();
 };
 
 }// namespace lcml::onnx

@@ -1,3 +1,6 @@
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -10,20 +13,20 @@ namespace lcml::onnx {
 // Attributes: coordinate_transform_mode, cubic_coeff_a, exclude_outside, extrapolation_value, mode, nearest_mode
 class Resize : public Operator {
 private:
-    std::string mode_;                     // "nearest", "linear", "cubic"
-    std::string coordinate_transform_mode_;// "half_pixel", "asymmetric", etc.
-    std::string nearest_mode_;             // "round_prefer_floor", etc.
+    luisa::string mode_;                     // "nearest", "linear", "cubic"
+    luisa::string coordinate_transform_mode_;// "half_pixel", "asymmetric", etc.
+    luisa::string nearest_mode_;             // "round_prefer_floor", etc.
     float cubic_coeff_a_;                  // cubic coefficient (default -0.75)
 
 public:
-    Resize(std::string mode, std::string coord_transform, std::string nearest_mode, float cubic_coeff_a)
+    Resize(luisa::string mode, luisa::string coord_transform, luisa::string nearest_mode, float cubic_coeff_a)
         : Operator("Resize"), mode_(std::move(mode)),
           coordinate_transform_mode_(std::move(coord_transform)),
           nearest_mode_(std::move(nearest_mode)),
           cubic_coeff_a_(cubic_coeff_a) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 1 && outputs.size() == 1,
                      "Resize requires >=1 input and 1 output.");
@@ -47,18 +50,18 @@ public:
             return (x_shape[d] > 0) ? static_cast<float>(x_shape[d] - 1) : 0.0f;
         };
 
-        auto const &tid = X.element_type();
-        bool is_quantized = (tid == typeid(FP4E2M1) || tid == typeid(FP8E4M3FN) ||
-                             tid == typeid(FP8E5M2) || tid == typeid(FP16Quantized));
+        auto const &tid = X.element_type_index();
+        bool is_quantized = (tid == refl::type_index_of<FP4E2M1>() || tid == refl::type_index_of<FP8E4M3FN>() ||
+                             tid == refl::type_index_of<FP8E5M2>() || tid == refl::type_index_of<FP16Quantized>());
 
         if (is_quantized) {
-            visit_typeid<FP4E2M1, FP8E4M3FN, FP8E5M2, FP16Quantized>(tid, [&]<typename T>() {
+            visit_type_index<FP4E2M1, FP8E4M3FN, FP8E5M2, FP16Quantized>(tid, [&]<typename T>() {
                 using QT = half;
                 auto &x = static_cast<NNTensor<T> &>(X);
                 auto &y = static_cast<NNTensor<T> &>(Y);
 
                 // Compute scale factors per dimension (output_size / input_size)
-                std::vector<float> scales(ndim);
+                luisa::vector<float> scales(ndim);
                 for (size_t d = 0; d < ndim; ++d) {
                     scales[d] = static_cast<float>(y_shape[d]) / static_cast<float>(x_shape[d]);
                 }
@@ -268,13 +271,13 @@ public:
                 }
             });
         } else {
-            visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(tid, [&]<typename T>() {
+            visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(tid, [&]<typename T>() {
                 using VT = nn_storage_type_t<T>;
                 auto &x = static_cast<NNTensor<T> &>(X);
                 auto &y = static_cast<NNTensor<T> &>(Y);
 
                 // Compute scale factors per dimension (output_size / input_size)
-                std::vector<float> scales(ndim);
+                luisa::vector<float> scales(ndim);
                 for (size_t d = 0; d < ndim; ++d) {
                     scales[d] = static_cast<float>(y_shape[d]) / static_cast<float>(x_shape[d]);
                 }
@@ -547,9 +550,9 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Resize) {
-    std::string mode = "nearest";
-    std::string coord_transform = "half_pixel";
-    std::string nearest_mode = "round_prefer_floor";
+    luisa::string mode = "nearest";
+    luisa::string coord_transform = "half_pixel";
+    luisa::string nearest_mode = "round_prefer_floor";
     if (auto p = node.try_get_attr("mode"))
         mode = p->get<onnx::AttributeType::STRING>();
     if (auto p = node.try_get_attr("coordinate_transform_mode"))
@@ -559,7 +562,7 @@ REGISTER_TO_DEFAULT_OPSET(Resize) {
     float cubic_coeff_a = -0.75f;
     if (auto p = node.try_get_attr("cubic_coeff_a"))
         cubic_coeff_a = p->get<onnx::AttributeType::FLOAT>();
-    return std::make_unique<Resize>(std::move(mode), std::move(coord_transform),
+    return luisa::make_unique<Resize>(std::move(mode), std::move(coord_transform),
                                     std::move(nearest_mode), cubic_coeff_a);
 };
 

@@ -1,6 +1,7 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -14,8 +15,8 @@ public:
     /// Element-wise clamp: output[i] = clamp(input[i], min, max). Safe for in-place.
     bool can_operate_inplace() const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 1 && inputs.size() <= 3 && outputs.size() == 1,
                      "Clip requires 1-3 inputs and 1 output.");
@@ -23,7 +24,7 @@ public:
         auto &input = inputs[0].get();
         auto &output = outputs[0].get();
 #ifndef NDEBUG
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Clip: input and output must have the same element type.");
         LUISA_ASSERT(input.size() == output.size(),
                      "Clip: input and output must have the same size.");
@@ -36,7 +37,7 @@ public:
         if (min_tensor && min_tensor->size() == 0) min_tensor = nullptr;
         if (max_tensor && max_tensor->size() == 0) max_tensor = nullptr;
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             using ST = typename NNTensor<T>::value_type;
@@ -205,7 +206,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Clip) {
-    return std::make_unique<Clip>();
+    return luisa::make_unique<Clip>();
 };
 
 }// namespace lcml::onnx

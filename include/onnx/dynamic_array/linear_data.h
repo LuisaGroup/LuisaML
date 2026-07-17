@@ -1,7 +1,9 @@
 #pragma once
 #include "luisa_ml_config.h"
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace luisa::compute::dynamic_array {
 
@@ -25,7 +27,7 @@ struct LinearData {
         auto f = detail::FunctionBuilder::current();
         auto i = def(std::forward<U>(index));
         if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
-            using cast_t = std::conditional_t<std::is_integral_v<T>, int, T>;
+            using cast_t = std::conditional_t<std::is_integral_v<T>, int32_t, T>;
             auto v = def(static_cast<cast_t>(start)) +
                      def(static_cast<cast_t>(delta)) * i.template cast<cast_t>();
             return *f->template create_temporary<Var<T>>(v.template cast<T>().expression());

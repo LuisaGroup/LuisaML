@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -18,15 +19,15 @@ struct IsTopKSupported : std::bool_constant<
 class TopK : public Operator {
 private:
     int64_t axis_;
-    int largest_;
-    int sorted_;
+    int32_t largest_;
+    int32_t sorted_;
 
 public:
-    TopK(int64_t axis, int largest, int sorted)
+    TopK(int64_t axis, int32_t largest, int32_t sorted)
         : Operator("TopK"), axis_(axis), largest_(largest), sorted_(sorted) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 2,
                      "TopK requires 2 inputs and 2 outputs.");
@@ -44,9 +45,9 @@ public:
         uint32_t K = v_shape[axis];
 
 #ifndef NDEBUG
-        LUISA_ASSERT(X.element_type() == Values.element_type(),
+        LUISA_ASSERT(X.element_type_index() == Values.element_type_index(),
                      "TopK: X and Values must have the same element type.");
-        LUISA_ASSERT(Indices.element_type() == typeid(int) || Indices.element_type() == typeid(slong),
+        LUISA_ASSERT(Indices.element_type_index() == refl::type_index_of<int32_t>() || Indices.element_type_index() == refl::type_index_of<slong>(),
                      "TopK: Indices must be int or int64 type.");
         LUISA_ASSERT(K <= axis_size, "TopK: K must be <= axis_size.");
         LUISA_ASSERT(axis_size > 0, "TopK: axis_size must be > 0.");
@@ -55,11 +56,11 @@ public:
         uint32_t ax_stride = 1;
         for (size_t d = axis + 1; d < ndim; ++d) ax_stride *= x_shape[d];
 
-        visit_typeid<NNFilteredTypeList<IsTopKSupported>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsTopKSupported>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &vals = static_cast<NNTensor<T> &>(Values);
-            auto &idxs = static_cast<NNTensor<int> &>(Indices);
+            auto &idxs = static_cast<NNTensor<int32_t> &>(Indices);
 
             // Performance: use half-precision compare for float inputs,
             // and dequantize FP4/FP8 to half. Precision loss is acceptable per rules.
@@ -219,11 +220,11 @@ public:
 
 REGISTER_TO_DEFAULT_OPSET(TopK) {
     int64_t axis = -1;
-    int largest = 1, sorted = 1;
+    int32_t largest = 1, sorted = 1;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("largest")) largest = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("sorted")) sorted = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<TopK>(axis, largest, sorted);
+    return luisa::make_unique<TopK>(axis, largest, sorted);
 };
 
 }// namespace lcml::onnx

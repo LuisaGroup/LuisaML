@@ -2,26 +2,29 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/string.h>
+
 namespace lcml::onnx {
 
 // Pad: pads a tensor with a constant, edge, or reflect value.
 // ONNX spec (opset 11+): inputs: data, pads, [constant_value]; attribute mode (default "constant")
 class Pad : public Operator {
 private:
-    std::string mode_;
+    luisa::string mode_;
 
 public:
-    Pad(std::string mode) : Operator("Pad"), mode_(std::move(mode)) {}
+    Pad(luisa::string mode) : Operator("Pad"), mode_(std::move(mode)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 2 && outputs.size() == 1, "Pad requires >=2 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
         auto ndim = data.ndim();
 
-        LUISA_ASSERT(data.element_type() == output.element_type(), "Pad: data and output must have the same element type.");
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(), "Pad: data and output must have the same element type.");
 #else
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
@@ -47,7 +50,7 @@ public:
             }
         }
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
@@ -201,7 +204,7 @@ public:
                             // src_coord = coord - pad_begin[d], then clamp to [0, in_shape[d]-1]
                             auto pad_val = pads_t[d].cast<int>();
                             auto src = coord.cast<int>() - pad_val;
-                            auto dim_size = def(static_cast<int>(in_shape[d]));
+                            auto dim_size = def(static_cast<int32_t>(in_shape[d]));
                             auto clamped = max(min(src, dim_size - 1), def(0));
                             in_linear += clamped.cast<uint>() * in.strides()[d]; }, out.size());
                         auto v = buf_in->read<VT>(off_in + in_linear * static_cast<uint>(sizeof(VT)));
@@ -214,7 +217,7 @@ public:
                             // src_coord = coord - pad_begin[d], then clamp to [0, in_shape[d]-1]
                             auto pad_val = pads_t[d].cast<int>();
                             auto src = coord.cast<int>() - pad_val;
-                            auto dim_size = def(static_cast<int>(in_shape[d]));
+                            auto dim_size = def(static_cast<int32_t>(in_shape[d]));
                             auto clamped = max(min(src, dim_size - 1), def(0));
                             in_linear += clamped.cast<uint>() * in.strides()[d]; }, out.size());
                         out[linear_out] = in[in_linear];
@@ -236,7 +239,7 @@ public:
                             // Reflect: for dim_size > 1, fold src into [0, dim_size-1]
                             // Using periodic reflection: period = 2*(dim_size-1)
                             if (in_shape[d] > 1) {
-                                auto period = def(static_cast<int>(2 * (in_shape[d] - 1)));
+                                auto period = def(static_cast<int32_t>(2 * (in_shape[d] - 1)));
                                 // Make positive: src = src % period, then handle negative
                                 auto mod_src = src % period;
                                 // If negative, add period
@@ -261,7 +264,7 @@ public:
                             // Reflect: for dim_size > 1, fold src into [0, dim_size-1]
                             // Using periodic reflection: period = 2*(dim_size-1)
                             if (in_shape[d] > 1) {
-                                auto period = def(static_cast<int>(2 * (in_shape[d] - 1)));
+                                auto period = def(static_cast<int32_t>(2 * (in_shape[d] - 1)));
                                 // Make positive: src = src % period, then handle negative
                                 auto mod_src = src % period;
                                 // If negative, add period
@@ -284,10 +287,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Pad) {
-    std::string mode = "constant";
+    luisa::string mode = "constant";
     if (auto p = node.try_get_attr("mode"))
         mode = p->get<onnx::AttributeType::STRING>();
-    return std::make_unique<Pad>(std::move(mode));
+    return luisa::make_unique<Pad>(std::move(mode));
 };
 
 }// namespace lcml::onnx

@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include <limits>
 
 #include "onnx/operator.h"
@@ -18,21 +19,21 @@ static uint32_t axis_stride(ITensor::shape_type const &shape, uint32_t axis) {
 class ArgMax : public Operator {
 private:
     int64_t axis_;
-    int keepdims_;
-    int select_last_index_;
+    int32_t keepdims_;
+    int32_t select_last_index_;
 
 public:
-    ArgMax(int64_t axis, int keepdims, int select_last_index)
+    ArgMax(int64_t axis, int32_t keepdims, int32_t select_last_index)
         : Operator("ArgMax"), axis_(axis), keepdims_(keepdims), select_last_index_(select_last_index) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "ArgMax requires 1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
-        LUISA_ASSERT(Y.element_type() == typeid(int) || Y.element_type() == typeid(slong),
+        LUISA_ASSERT(Y.element_type_index() == refl::type_index_of<int32_t>() || Y.element_type_index() == refl::type_index_of<slong>(),
                      "ArgMax: output must be int or int64 type.");
 #else
         auto &X = inputs[0].get();
@@ -44,10 +45,10 @@ public:
         auto axis_size = static_cast<uint32_t>(x_shape[axis]);
         auto ax_stride = axis_stride(x_shape, axis);
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
-            auto &y = static_cast<NNTensor<int> &>(Y);
+            auto &y = static_cast<NNTensor<int32_t> &>(Y);
 
             bool x_is_buf = x.container().is_byte_buffer();
             Var<ByteBuffer> *buf_x = nullptr;
@@ -104,30 +105,30 @@ public:
 
 REGISTER_TO_DEFAULT_OPSET(ArgMax) {
     int64_t axis = 0;
-    int keepdims = 1, sli = 0;
+    int32_t keepdims = 1, sli = 0;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("keepdims")) keepdims = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("select_last_index")) sli = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<ArgMax>(axis, keepdims, sli);
+    return luisa::make_unique<ArgMax>(axis, keepdims, sli);
 };
 
 // ArgMin: same as ArgMax but finds minimum
 class ArgMin : public Operator {
 private:
     int64_t axis_;
-    int keepdims_;
+    int32_t keepdims_;
 
 public:
-    ArgMin(int64_t axis, int keepdims) : Operator("ArgMin"), axis_(axis), keepdims_(keepdims) {}
+    ArgMin(int64_t axis, int32_t keepdims) : Operator("ArgMin"), axis_(axis), keepdims_(keepdims) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "ArgMin requires 1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
-        LUISA_ASSERT(Y.element_type() == typeid(int) || Y.element_type() == typeid(slong),
+        LUISA_ASSERT(Y.element_type_index() == refl::type_index_of<int32_t>() || Y.element_type_index() == refl::type_index_of<slong>(),
                      "ArgMin: output must be int or int64 type.");
 #else
         auto &X = inputs[0].get();
@@ -139,10 +140,10 @@ public:
         auto axis_size = static_cast<uint32_t>(x_shape[axis]);
         auto ax_stride = axis_stride(x_shape, axis);
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
-            auto &y = static_cast<NNTensor<int> &>(Y);
+            auto &y = static_cast<NNTensor<int32_t> &>(Y);
 
             bool x_is_buf = x.container().is_byte_buffer();
             Var<ByteBuffer> *buf_x = nullptr;
@@ -190,10 +191,10 @@ public:
 
 REGISTER_TO_DEFAULT_OPSET(ArgMin) {
     int64_t axis = 0;
-    int keepdims = 1;
+    int32_t keepdims = 1;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("keepdims")) keepdims = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<ArgMin>(axis, keepdims);
+    return luisa::make_unique<ArgMin>(axis, keepdims);
 };
 
 namespace detail {
@@ -219,14 +220,14 @@ private:
 public:
     Softmax(int64_t axis) : Operator("Softmax"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Softmax requires 1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
-        LUISA_ASSERT(X.element_type() == Y.element_type(),
+        LUISA_ASSERT(X.element_type_index() == Y.element_type_index(),
                      "Softmax: input and output must have the same element type.");
 #else
         auto &X = inputs[0].get();
@@ -238,7 +239,7 @@ public:
         auto axis_size = static_cast<uint32_t>(x_shape[axis]);
         auto ax_stride = axis_stride(x_shape, axis);
 
-        visit_typeid<SoftmaxTypeList>(X.element_type(), [&]<typename T>() {
+        visit_type_index<SoftmaxTypeList>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &y = static_cast<NNTensor<T> &>(Y);
@@ -442,7 +443,7 @@ public:
 REGISTER_TO_DEFAULT_OPSET(Softmax) {
     int64_t axis = -1;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Softmax>(axis);
+    return luisa::make_unique<Softmax>(axis);
 };
 
 // LogSoftmax: log(softmax(x))
@@ -453,14 +454,14 @@ private:
 public:
     LogSoftmax(int64_t axis) : Operator("LogSoftmax"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "LogSoftmax requires 1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
-        LUISA_ASSERT(X.element_type() == Y.element_type(),
+        LUISA_ASSERT(X.element_type_index() == Y.element_type_index(),
                      "LogSoftmax: input and output must have the same element type.");
 #else
         auto &X = inputs[0].get();
@@ -472,7 +473,7 @@ public:
         auto axis_size = static_cast<uint32_t>(x_shape[axis]);
         auto ax_stride = axis_stride(x_shape, axis);
 
-        visit_typeid<SoftmaxTypeList>(X.element_type(), [&]<typename T>() {
+        visit_type_index<SoftmaxTypeList>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &y = static_cast<NNTensor<T> &>(Y);
@@ -676,7 +677,7 @@ public:
 REGISTER_TO_DEFAULT_OPSET(LogSoftmax) {
     int64_t axis = -1;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<LogSoftmax>(axis);
+    return luisa::make_unique<LogSoftmax>(axis);
 };
 
 // Hardmax: sets 1 at the position of the max value along axis, 0 elsewhere
@@ -687,14 +688,14 @@ private:
 public:
     Hardmax(int64_t axis) : Operator("Hardmax"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "Hardmax requires 1 input and 1 output.");
         auto &X = inputs[0].get();
         auto &Y = outputs[0].get();
-        LUISA_ASSERT(X.element_type() == Y.element_type(),
+        LUISA_ASSERT(X.element_type_index() == Y.element_type_index(),
                      "Hardmax: input and output must have the same element type.");
 #else
         auto &X = inputs[0].get();
@@ -706,7 +707,7 @@ public:
         auto axis_size = static_cast<uint32_t>(x_shape[axis]);
         auto ax_stride = axis_stride(x_shape, axis);
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &y = static_cast<NNTensor<T> &>(Y);
@@ -749,7 +750,7 @@ public:
 REGISTER_TO_DEFAULT_OPSET(Hardmax) {
     int64_t axis = -1;
     if (auto p = node.try_get_attr("axis")) axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Hardmax>(axis);
+    return luisa::make_unique<Hardmax>(axis);
 };
 
 }// namespace lcml::onnx

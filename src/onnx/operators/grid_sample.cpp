@@ -2,6 +2,9 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/string.h>
+
 namespace lcml::onnx {
 
 template<typename T>
@@ -14,17 +17,17 @@ struct GridSampleSupported : std::bool_constant<
 
 class GridSample : public Operator {
 private:
-    int align_corners_;
-    std::string mode_;
-    std::string padding_mode_;
+    int32_t align_corners_;
+    luisa::string mode_;
+    luisa::string padding_mode_;
 
 public:
-    GridSample(int align_corners, std::string mode, std::string padding_mode)
+    GridSample(int32_t align_corners, luisa::string mode, luisa::string padding_mode)
         : Operator("GridSample"), align_corners_(align_corners),
           mode_(std::move(mode)), padding_mode_(std::move(padding_mode)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "GridSample requires 2 inputs and 1 output.");
@@ -41,9 +44,9 @@ public:
         uint32_t iH = x_shape[2], iW = x_shape[3];
         uint32_t oH = g_shape[1], oW = g_shape[2];
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(Grid.element_type(), [&]<typename GT>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(Grid.element_type_index(), [&]<typename GT>() {
             using GT_VT = nn_storage_type_t<GT>;
-            visit_typeid<NNFilteredTypeList<GridSampleSupported>>(X.element_type(), [&]<typename XT>() {
+            visit_type_index<NNFilteredTypeList<GridSampleSupported>>(X.element_type_index(), [&]<typename XT>() {
                 using VT = nn_storage_type_t<XT>;
                 using CT = std::conditional_t<
                     std::is_same_v<XT, FP4E2M1> || std::is_same_v<XT, FP8E4M3FN> ||
@@ -412,16 +415,16 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(GridSample) {
-    int align_corners = 0;
-    std::string mode = "bilinear";
-    std::string padding_mode = "zeros";
+    int32_t align_corners = 0;
+    luisa::string mode = "bilinear";
+    luisa::string padding_mode = "zeros";
     if (auto p = node.try_get_attr("align_corners"))
         align_corners = p->get<onnx::AttributeType::INT>();
     if (auto p = node.try_get_attr("mode"))
         mode = p->get<onnx::AttributeType::STRING>();
     if (auto p = node.try_get_attr("padding_mode"))
         padding_mode = p->get<onnx::AttributeType::STRING>();
-    return std::make_unique<GridSample>(align_corners, std::move(mode), std::move(padding_mode));
+    return luisa::make_unique<GridSample>(align_corners, std::move(mode), std::move(padding_mode));
 };
 
 }// namespace lcml::onnx

@@ -2,6 +2,9 @@
 
 #include "luisa_ml_config.h"
 
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/memory.h>
+
 #include "tensor.h"
 
 namespace lcml::onnx {
@@ -12,7 +15,7 @@ class TensorTable;
 
 class LUISA_ONNX_API Operator {
 private:
-    std::string name;
+    luisa::string _name;
 public:
     Operator() = delete;
     virtual ~Operator() = default;
@@ -21,10 +24,10 @@ public:
     Operator &operator=(const Operator &other) = default;
     Operator &operator=(Operator &&other) noexcept = default;
 
-    Operator(std::string name) : name(std::move(name)) {}
-    std::string const &get_name() const { return name; }
+    Operator(luisa::string name) : _name(std::move(name)) {}
+    luisa::string const &get_name() const { return _name; }
 
-    virtual void forward(std::span<std::reference_wrapper<ITensor>> inputs, std::span<std::reference_wrapper<ITensor>> outputs) = 0;
+    virtual void forward(luisa::span<std::reference_wrapper<ITensor>> inputs, luisa::span<std::reference_wrapper<ITensor>> outputs) = 0;
 
     /// Query whether the given output will be a zero-copy view of an input.
     /// The Node reference provides access to input/output Variable shapes and

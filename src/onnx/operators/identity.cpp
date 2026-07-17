@@ -3,6 +3,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 // Identity: returns the input tensor as-is.
@@ -18,8 +20,8 @@ public:
 
     bool need_outline() const override { return false; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1, "Identity requires 1 input and 1 output.");
 #endif
@@ -27,10 +29,10 @@ public:
         auto &output = outputs[0].get();
 #ifndef NDEBUG
         LUISA_ASSERT(input.size() == output.size(), "Identity: input and output must have the same total size.");
-        LUISA_ASSERT(input.element_type() == output.element_type(), "Identity: input and output must have the same element type.");
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(), "Identity: input and output must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             // If already sharing storage (inplace allocation), skip assignment
@@ -141,7 +143,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Identity) {
-    return std::make_unique<Identity>();
+    return luisa::make_unique<Identity>();
 };
 
 }// namespace lcml::onnx

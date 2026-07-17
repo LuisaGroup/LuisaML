@@ -1,6 +1,7 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -8,13 +9,13 @@ namespace lcml::onnx {
 // ONNX spec: input[0]=data, input[1]=indices; attribute batch_dims (default 0)
 class GatherND : public Operator {
 private:
-    int batch_dims_;
+    int32_t batch_dims_;
 
 public:
-    GatherND(int batch_dims) : Operator("GatherND"), batch_dims_(batch_dims) {}
+    GatherND(int32_t batch_dims) : Operator("GatherND"), batch_dims_(batch_dims) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "GatherND requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
@@ -27,21 +28,21 @@ public:
         auto idx_ndim = indices.ndim();
         auto last_idx_dim = idx_shape[idx_ndim - 1];// number of index dimensions
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "GatherND: data and output must have the same element type.");
-        LUISA_ASSERT(indices.element_type() == typeid(int) || indices.element_type() == typeid(slong),
-                     "GatherND: indices must be int or int64 type.");
+        LUISA_ASSERT(indices.element_type_index() == refl::type_index_of<int32_t>() || indices.element_type_index() == refl::type_index_of<slong>(),
+                     "GatherND: indices must be int32_t or int64 type.");
 
-        LUISA_ASSERT(batch_dims_ >= 0 && batch_dims_ < static_cast<int>(data_ndim),
+        LUISA_ASSERT(batch_dims_ >= 0 && batch_dims_ < static_cast<int32_t>(data_ndim),
                      "GatherND: batch_dims must be in [0, data_ndim).");
-        LUISA_ASSERT(batch_dims_ < static_cast<int>(idx_ndim),
+        LUISA_ASSERT(batch_dims_ < static_cast<int32_t>(idx_ndim),
                      "GatherND: batch_dims must be < indices.ndim.");
         LUISA_ASSERT(last_idx_dim <= data_ndim - batch_dims_,
                      "GatherND: last_idx_dim must be <= data_ndim - batch_dims.");
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &idx_tensor = static_cast<NNTensor<int> &>(indices);
+            auto &idx_tensor = static_cast<NNTensor<int32_t> &>(indices);
             auto &out = static_cast<NNTensor<T> &>(output);
             auto const &out_shape = out.shape();
             auto out_ndim = out.ndim();
@@ -106,12 +107,12 @@ public:
                         }
 
                         auto data_linear = def(0u);
-                        for (int d = 0; d < batch_dims_; ++d) {
+                        for (int32_t d = 0; d < batch_dims_; ++d) {
                             data_linear += out_coords[d] * in.strides()[d];
                         }
                         for (uint32_t k = 0; k < last_idx_dim; ++k) {
                             auto idx_signed = idx_tensor[idx_base + k];
-                            auto dim_size = static_cast<int>(in.shape()[batch_dims_ + k]);
+                            auto dim_size = static_cast<int32_t>(in.shape()[batch_dims_ + k]);
                             idx_signed = ite(idx_signed < 0, idx_signed + dim_size, idx_signed);
                             auto idx_val = idx_signed.cast<uint>();
                             data_linear += idx_val * in.strides()[batch_dims_ + k];
@@ -135,12 +136,12 @@ public:
                         }
 
                         auto data_linear = def(0u);
-                        for (int d = 0; d < batch_dims_; ++d) {
+                        for (int32_t d = 0; d < batch_dims_; ++d) {
                             data_linear += out_coords[d] * in.strides()[d];
                         }
                         for (uint32_t k = 0; k < last_idx_dim; ++k) {
                             auto idx_signed = idx_tensor[idx_base + k];
-                            auto dim_size = static_cast<int>(in.shape()[batch_dims_ + k]);
+                            auto dim_size = static_cast<int32_t>(in.shape()[batch_dims_ + k]);
                             idx_signed = ite(idx_signed < 0, idx_signed + dim_size, idx_signed);
                             auto idx_val = idx_signed.cast<uint>();
                             data_linear += idx_val * in.strides()[batch_dims_ + k];
@@ -171,12 +172,12 @@ public:
 
                 // Compute data base address for this slice
                 auto data_base = def(0u);
-                for (int d = 0; d < batch_dims_; ++d) {
+                for (int32_t d = 0; d < batch_dims_; ++d) {
                     data_base += out_coords[d] * in.strides()[d];
                 }
                 for (uint32_t k = 0; k < last_idx_dim; ++k) {
                     auto idx_signed = idx_tensor[idx_base + k];
-                    auto dim_size = static_cast<int>(in.shape()[batch_dims_ + k]);
+                    auto dim_size = static_cast<int32_t>(in.shape()[batch_dims_ + k]);
                     idx_signed = ite(idx_signed < 0, idx_signed + dim_size, idx_signed);
                     auto idx_val = idx_signed.cast<uint>();
                     data_base += idx_val * in.strides()[batch_dims_ + k];
@@ -189,10 +190,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(GatherND) {
-    int batch_dims = 0;
+    int32_t batch_dims = 0;
     if (auto p = node.try_get_attr("batch_dims"))
         batch_dims = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<GatherND>(batch_dims);
+    return luisa::make_unique<GatherND>(batch_dims);
 };
 
 }// namespace lcml::onnx

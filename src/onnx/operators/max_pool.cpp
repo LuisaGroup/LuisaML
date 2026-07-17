@@ -2,6 +2,9 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/vector.h>
+
 namespace lcml::onnx {
 
 template<typename T>
@@ -16,20 +19,20 @@ struct MaxPoolSupported : std::bool_constant<
 // ONNX spec: attributes: auto_pad, ceil_mode, dilations, kernel_shape, pads, strides, storage_order
 class MaxPool : public Operator {
 private:
-    std::vector<int> kernel_shape_;
-    std::vector<int> pads_;
-    std::vector<int> strides_;
-    std::vector<int> dilations_;
+    luisa::vector<int32_t> kernel_shape_;
+    luisa::vector<int32_t> pads_;
+    luisa::vector<int32_t> strides_;
+    luisa::vector<int32_t> dilations_;
 
 public:
-    MaxPool(std::vector<int> kernel_shape, std::vector<int> pads,
-            std::vector<int> strides, std::vector<int> dilations)
+    MaxPool(luisa::vector<int32_t> kernel_shape, luisa::vector<int32_t> pads,
+            luisa::vector<int32_t> strides, luisa::vector<int32_t> dilations)
         : Operator("MaxPool"), kernel_shape_(std::move(kernel_shape)),
           pads_(std::move(pads)), strides_(std::move(strides)),
           dilations_(std::move(dilations)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "MaxPool requires 1 input and 1 output.");
@@ -42,9 +45,9 @@ public:
         auto const &y_shape = Y.shape();
         auto spatial_dims = x_shape.size() - 2;
 
-        std::vector<int> strides = strides_;
-        std::vector<int> pads = pads_;
-        std::vector<int> dilations = dilations_;
+        luisa::vector<int32_t> strides = strides_;
+        luisa::vector<int32_t> pads = pads_;
+        luisa::vector<int32_t> dilations = dilations_;
         if (strides.empty()) strides.assign(spatial_dims, 1);
         if (pads.empty()) pads.assign(spatial_dims * 2, 0);
         if (dilations.empty()) dilations.assign(spatial_dims, 1);
@@ -58,15 +61,15 @@ public:
         auto const &y_shape = Y.shape();
         auto spatial_dims = x_shape.size() - 2;
 
-        std::vector<int> strides = strides_;
-        std::vector<int> pads = pads_;
-        std::vector<int> dilations = dilations_;
+        luisa::vector<int32_t> strides = strides_;
+        luisa::vector<int32_t> pads = pads_;
+        luisa::vector<int32_t> dilations = dilations_;
         if (strides.empty()) strides.assign(spatial_dims, 1);
         if (pads.empty()) pads.assign(spatial_dims * 2, 0);
         if (dilations.empty()) dilations.assign(spatial_dims, 1);
 #endif
 
-        visit_typeid<NNFilteredTypeList<MaxPoolSupported>>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<MaxPoolSupported>>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             using CT = std::conditional_t<
                 std::is_same_v<T, FP4E2M1> || std::is_same_v<T, FP8E4M3FN> ||
@@ -79,9 +82,9 @@ public:
             uint32_t iH = x_shape[2], iW = x_shape[3];
             uint32_t kH = kernel_shape_[0], kW = kernel_shape_[1];
             uint32_t oH = y_shape[2], oW = y_shape[3];
-            int sH = strides[0], sW = strides[1];
-            int dH = dilations[0], dW = dilations[1];
-            int pH = pads[0], pW = pads[1];
+            int32_t sH = strides[0], sW = strides[1];
+            int32_t dH = dilations[0], dW = dilations[1];
+            int32_t pH = pads[0], pW = pads[1];
 
             auto x_stride_n = x.strides()[0];
             auto x_stride_c = x.strides()[1];
@@ -281,7 +284,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(MaxPool) {
-    std::vector<int> kernel_shape, pads, strides, dilations;
+    luisa::vector<int32_t> kernel_shape, pads, strides, dilations;
     if (auto p = node.try_get_attr("kernel_shape"))
         kernel_shape = p->get<onnx::AttributeType::INTS>();
     if (auto p = node.try_get_attr("pads"))
@@ -290,7 +293,7 @@ REGISTER_TO_DEFAULT_OPSET(MaxPool) {
         strides = p->get<onnx::AttributeType::INTS>();
     if (auto p = node.try_get_attr("dilations"))
         dilations = p->get<onnx::AttributeType::INTS>();
-    return std::make_unique<MaxPool>(std::move(kernel_shape), std::move(pads),
+    return luisa::make_unique<MaxPool>(std::move(kernel_shape), std::move(pads),
                                      std::move(strides), std::move(dilations));
 };
 

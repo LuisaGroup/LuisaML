@@ -4,6 +4,8 @@
 #include "onnx/onnx.h"
 #include <luisa/dsl/coop_vector.h>
 
+#include <luisa/core/stl/memory.h>
+
 namespace lcml::onnx {
 
 template<typename T>
@@ -17,8 +19,8 @@ class Gemm : public Operator {
 private:
     float alpha_;
     float beta_;
-    int transA_;
-    int transB_;
+    int32_t transA_;
+    int32_t transB_;
     uint warp_size_ = 0;
     bool use_coop_vec_ = false;
 
@@ -323,7 +325,7 @@ private:
     }
 
 public:
-    Gemm(float alpha, float beta, int transA, int transB)
+    Gemm(float alpha, float beta, int32_t transA, int32_t transB)
         : Operator("Gemm"), alpha_(alpha), beta_(beta), transA_(transA), transB_(transB) {}
 
     void set_environment(NetworkInstance &env, TensorTable &) override {
@@ -331,8 +333,8 @@ public:
         use_coop_vec_ = env.use_cooperative_vector();
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 2 && inputs.size() <= 3 && outputs.size() == 1,
                      "Gemm requires 2 or 3 inputs and 1 output.");
@@ -343,15 +345,15 @@ public:
         auto &Y = outputs[0].get();
 
 #ifndef NDEBUG
-        LUISA_ASSERT(A.element_type() == B.element_type() && A.element_type() == Y.element_type(),
+        LUISA_ASSERT(A.element_type_index() == B.element_type_index() && A.element_type_index() == Y.element_type_index(),
                      "Gemm: all tensors must have the same element type.");
-        LUISA_ASSERT(!C_ptr || C_ptr->element_type() == A.element_type(),
+        LUISA_ASSERT(!C_ptr || C_ptr->element_type_index() == A.element_type_index(),
                      "Gemm: C must have the same element type as A and B.");
         LUISA_ASSERT(A.ndim() == 2 && B.ndim() == 2,
                      "Gemm: A and B must be 2D tensors.");
 #endif
 
-        visit_typeid<NNFilteredTypeList<GemmTensorRequirements>>(A.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<GemmTensorRequirements>>(A.element_type_index(), [&]<typename T>() {
             apply(static_cast<NNTensor<T> &>(A),
                   static_cast<NNTensor<T> &>(B),
                   C_ptr,
@@ -363,8 +365,8 @@ public:
 REGISTER_TO_DEFAULT_OPSET(Gemm) {
     float alpha = 1.0f;
     float beta = 1.0f;
-    int transA = 0;
-    int transB = 0;
+    int32_t transA = 0;
+    int32_t transB = 0;
 
     if (auto p = node.try_get_attr("alpha")) {
         alpha = p->get<onnx::AttributeType::FLOAT>();
@@ -379,7 +381,7 @@ REGISTER_TO_DEFAULT_OPSET(Gemm) {
         transB = p->get<onnx::AttributeType::INT>();
     }
 
-    return std::make_unique<Gemm>(alpha, beta, transA, transB);
+    return luisa::make_unique<Gemm>(alpha, beta, transA, transB);
 };
 
 }// namespace lcml::onnx

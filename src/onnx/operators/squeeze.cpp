@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -118,8 +119,8 @@ public:
     bool is_output_view([[maybe_unused]] size_t output_index,
                         [[maybe_unused]] onnx::Node const &node) const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 1 && inputs.size() <= 2 && outputs.size() == 1,
                      "Squeeze requires 1-2 inputs and 1 output.");
@@ -129,11 +130,11 @@ public:
 #ifndef NDEBUG
         LUISA_ASSERT(input.size() == output.size(),
                      "Squeeze: input and output must have the same total size.");
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Squeeze: input and output must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             detail::squeeze_copy(in, out);
@@ -142,7 +143,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Squeeze) {
-    return std::make_unique<Squeeze>();
+    return luisa::make_unique<Squeeze>();
 };
 
 // Unsqueeze: inserts a dimension of size 1 at the specified axes.
@@ -154,8 +155,8 @@ public:
     bool is_output_view([[maybe_unused]] size_t output_index,
                         [[maybe_unused]] onnx::Node const &node) const override { return true; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Unsqueeze requires 2 inputs and 1 output.");
@@ -165,11 +166,11 @@ public:
 #ifndef NDEBUG
         LUISA_ASSERT(input.size() == output.size(),
                      "Unsqueeze: input and output must have the same total size.");
-        LUISA_ASSERT(input.element_type() == output.element_type(),
+        LUISA_ASSERT(input.element_type_index() == output.element_type_index(),
                      "Unsqueeze: input and output must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(input.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(input.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(input);
             auto &out = static_cast<NNTensor<T> &>(output);
             detail::squeeze_copy(in, out);
@@ -178,7 +179,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Unsqueeze) {
-    return std::make_unique<Unsqueeze>();
+    return luisa::make_unique<Unsqueeze>();
 };
 
 }// namespace lcml::onnx

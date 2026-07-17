@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -9,10 +10,10 @@ namespace lcml::onnx {
 // allowzero attribute (default 0): if 0, dim=0 means copy from input; if 1, dim=0 means actual 0
 class Reshape : public Operator {
 private:
-    int allowzero_;
+    int32_t allowzero_;
 
 public:
-    Reshape(int allowzero) : Operator("Reshape"), allowzero_(allowzero) {}
+    Reshape(int32_t allowzero) : Operator("Reshape"), allowzero_(allowzero) {}
 
     bool is_output_view([[maybe_unused]] size_t output_index,
                         [[maybe_unused]] onnx::Node const &node) const override { return true; }
@@ -21,8 +22,8 @@ public:
 
     bool need_outline() const override { return false; }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() >= 1 && inputs.size() <= 2 && outputs.size() == 1, "Reshape requires 1 or 2 inputs and 1 output.");
 #endif
@@ -30,10 +31,10 @@ public:
         auto &output = outputs[0].get();
 #ifndef NDEBUG
         LUISA_ASSERT(data.size() == output.size(), "Reshape: input and output must have the same total size.");
-        LUISA_ASSERT(data.element_type() == output.element_type(), "Reshape: input and output must have the same element type.");
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(), "Reshape: input and output must have the same element type.");
 #endif
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
             // If already sharing storage (inplace allocation), skip assignment
@@ -115,10 +116,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Reshape) {
-    int allowzero = 0;
+    int32_t allowzero = 0;
     if (auto p = node.try_get_attr("allowzero"))
         allowzero = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Reshape>(allowzero);
+    return luisa::make_unique<Reshape>(allowzero);
 };
 
 }// namespace lcml::onnx

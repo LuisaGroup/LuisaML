@@ -11,12 +11,15 @@
 #pragma once
 #include <algorithm>
 #include <memory>
-#include <optional>
 #include <ranges>
 #include <vector>
 #include <format>
 #include <type_traits>
 #include <yyjson.h>
+#include <luisa/core/stl/memory.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/optional.h>
 #include <luisa/core/logging.h>
 
 #ifndef cppyy_assert
@@ -114,18 +117,18 @@ auto cast(const Json &json) -> decltype(json.template cast<T>()) {
 }
 
 class json_string : public std::string_view {
-    std::shared_ptr<char> str_ptr_;
+    luisa::shared_ptr<char> str_ptr_;
 
 public:
     json_string(char *ptr, std::size_t len)
-        : std::string_view(ptr, len), str_ptr_(std::shared_ptr<char>(ptr, [](auto *p) { std::free(p); })) {
+        : std::string_view(ptr, len), str_ptr_(luisa::shared_ptr<char>(ptr, [](auto *p) { std::free(p); })) {
     }
     json_string(char *ptr, std::size_t len, yyjson_alc *alc)
         : std::string_view(ptr, len),
-          str_ptr_(std::shared_ptr<char>(ptr, [alc = alc](auto *p) mutable { alc->free(alc->ctx, p); })) {
+          str_ptr_(luisa::shared_ptr<char>(ptr, [alc = alc](auto *p) mutable { alc->free(alc->ctx, p); })) {
     }
-    json_string(char *ptr, std::size_t len, const std::shared_ptr<yyjson_alc> &alc)
-        : std::string_view(ptr, len), str_ptr_(std::shared_ptr<char>(ptr, [alc = alc](auto *p) mutable {
+    json_string(char *ptr, std::size_t len, const luisa::shared_ptr<yyjson_alc> &alc)
+        : std::string_view(ptr, len), str_ptr_(luisa::shared_ptr<char>(ptr, [alc = alc](auto *p) mutable {
               alc->free(alc->ctx, p);
               alc.reset();
           })) {
@@ -139,19 +142,19 @@ class key_string : public std::string_view {
 public:
     key_string(const std::string_view &v) noexcept : std::string_view(v) {}      // NOLINT
     key_string(std::string_view &&v) noexcept : std::string_view(std::move(v)) {}// NOLINT
-    key_string(std::string &&) = delete;
+    key_string(luisa::string &&) = delete;
     explicit operator const char *() { return base::data(); }
 };
 
 template<typename T, typename U = std::remove_cv_t<T>>
 concept yyjson_allocator =
-    (std::same_as<std::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(std::declval<U>().ptr())>>) ||
+    (std::same_as<luisa::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(std::declval<U>().ptr())>>) ||
     (std::same_as<yyjson_alc *, std::remove_const_t<decltype(std::declval<U &>().ptr())>>) ||
     std::same_as<yyjson_alc, U>;
 
 #if YYJSON_VERSION_HEX >= 0x000800
 class dynamic_allocator {
-    std::shared_ptr<yyjson_alc> alc_ = {yyjson_alc_dyn_new(), [](auto *ptr) { yyjson_alc_dyn_free(ptr); }};
+    luisa::shared_ptr<yyjson_alc> alc_ = {yyjson_alc_dyn_new(), [](auto *ptr) { yyjson_alc_dyn_free(ptr); }};
 
 public:
     auto &ptr() & { return alc_; }
@@ -168,7 +171,7 @@ class pool_allocator {
     auto init() {
         buf_ = nullptr;
         size_ = 0;
-        return std::shared_ptr<yyjson_alc>();
+        return luisa::shared_ptr<yyjson_alc>();
     }
     auto init(std::size_t size) {
         if (size == 0) return init();
@@ -179,14 +182,14 @@ class pool_allocator {
         // allocate memory pool
         auto alc = new yyjson_alc;
         yyjson_alc_pool_init(alc, buf_, size);
-        return std::shared_ptr<yyjson_alc>(alc, [b = buf_, s = size_](auto *a) {
+        return luisa::shared_ptr<yyjson_alc>(alc, [b = buf_, s = size_](auto *a) {
             std::allocator<char_like>().deallocate(b, s);
             delete a;
         });
     }
     char_like *buf_ = nullptr;
     std::size_t size_ = 0;
-    std::shared_ptr<yyjson_alc> alc_;
+    luisa::shared_ptr<yyjson_alc> alc_;
 
 public:
     pool_allocator() = default;
@@ -292,7 +295,7 @@ template<typename T>
 concept pair_like = tuple_like<T> && std::tuple_size_v<std::remove_cvref_t<T>> == 2;
 
 template<typename Key>
-concept key_type = std::convertible_to<Key, const char *> || std::convertible_to<Key, std::string> ||
+concept key_type = std::convertible_to<Key, const char *> || std::convertible_to<Key, luisa::string> ||
                    std::convertible_to<Key, std::string_view>;
 template<typename Pair>
 concept key_value_like = pair_like<Pair> && key_type<std::tuple_element_t<0, Pair>>;
@@ -617,11 +620,11 @@ concept key_value_like_create_value_callable =
 
 struct mutable_document_ptrs {
     yyjson_mut_doc *self = yyjson_mut_doc_new(nullptr);
-    std::vector<std::shared_ptr<mutable_document_ptrs>> children;
+    luisa::vector<luisa::shared_ptr<mutable_document_ptrs>> children;
 };
 
 struct mutable_document {
-    std::shared_ptr<mutable_document_ptrs> ptrs = std::shared_ptr<mutable_document_ptrs>(
+    luisa::shared_ptr<mutable_document_ptrs> ptrs = luisa::shared_ptr<mutable_document_ptrs>(
         new mutable_document_ptrs(), [](mutable_document_ptrs *raw_ptr) {
             yyjson_mut_doc_free(raw_ptr->self);
             delete raw_ptr;
@@ -671,7 +674,7 @@ struct mutable_document {
     auto create_primitive(T v, Ts...) noexcept {
         return yyjson_mut_real(ptrs->self, v);
     }
-    auto create_primitive(const std::string &v, copy_string_t) noexcept {
+    auto create_primitive(const luisa::string &v, copy_string_t) noexcept {
         return yyjson_mut_strncpy(ptrs->self, v.data(), v.size());
     }
     auto create_primitive(std::string_view v, copy_string_t) noexcept {
@@ -680,10 +683,10 @@ struct mutable_document {
     auto create_primitive(const char *v, copy_string_t) noexcept {
         return create_primitive(std::string_view(v), copy_string);
     }
-    auto create_primitive(const std::string &v) noexcept {
+    auto create_primitive(const luisa::string &v) noexcept {
         return yyjson_mut_strn(ptrs->self, v.data(), v.size());
     }
-    auto create_primitive(std::string &&v) noexcept {
+    auto create_primitive(luisa::string &&v) noexcept {
         return yyjson_mut_strncpy(ptrs->self, v.data(), v.size());
     }
     auto create_primitive(std::string_view v) noexcept {
@@ -963,10 +966,10 @@ struct mutable_document {
             }
             if (yyjson_unlikely(!dst->uni.str)) return false;
         } else if constexpr (std::same_as<std::string_view, value_type> ||
-                             std::same_as<std::string, value_type>) {
+                             std::same_as<luisa::string, value_type>) {
             dst->tag = (static_cast<std::uint64_t>(t.size()) << YYJSON_TAG_BIT) | YYJSON_TYPE_STR;
             if constexpr (copy ||
-                          (std::same_as<std::string, value_type> && std::is_rvalue_reference_v<T &&>)) {
+                          (std::same_as<luisa::string, value_type> && std::is_rvalue_reference_v<T &&>)) {
                 dst->uni.str = unsafe_yyjson_mut_strncpy(ptrs->self, t.data(), t.size());
             } else {
                 dst->uni.str = t.data();
@@ -1119,7 +1122,7 @@ class abstract_value {
 
     constexpr auto convert_to_bool_type(const bool v = false) {
         if constexpr (is_value_type)
-            return std::make_shared<bool>(v);
+            return luisa::make_shared<bool>(v);
         else
             return v;
     }
@@ -1142,7 +1145,7 @@ protected:
     static constexpr auto is_value_type = !is_reference;
     static constexpr auto is_mutable_reference = !is_const && is_reference;
     static constexpr auto is_const_reference = is_const && is_reference;
-    using bool_type = std::conditional_t<is_value_type, std::shared_ptr<bool>, bool>;
+    using bool_type = std::conditional_t<is_value_type, luisa::shared_ptr<bool>, bool>;
 
     DocType doc_ = DocType();
     yyjson_mut_val *val_ = nullptr;
@@ -1331,7 +1334,7 @@ public:
         auto len = static_cast<std::size_t>(0);
         auto result = write_func(to_underlying(write_flag), detail::get_allocator_pointer(alc), &len, &err);
 
-        if constexpr (std::same_as<std::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
+        if constexpr (std::same_as<luisa::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
             if (result != nullptr) [[likely]]
                 return json_string(result, len, alc.ptr());
         } else {
@@ -1381,57 +1384,57 @@ public:
     [[nodiscard]] auto is_object() const noexcept { return yyjson_mut_is_obj(base::val_); }
     [[nodiscard]] auto is_container() const noexcept { return yyjson_mut_is_ctn(base::val_); }
 
-    [[nodiscard]] std::optional<std::nullptr_t> as_null() const noexcept {
+    [[nodiscard]] luisa::optional<std::nullptr_t> as_null() const noexcept {
         if (is_null()) [[likely]]
             return nullptr;
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<bool> as_bool() const noexcept {
+    [[nodiscard]] luisa::optional<bool> as_bool() const noexcept {
         if (is_bool()) [[likely]]
             return yyjson_mut_get_bool(base::val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<std::uint64_t> as_uint() const noexcept {
+    [[nodiscard]] luisa::optional<std::uint64_t> as_uint() const noexcept {
         if (is_uint()) return yyjson_mut_get_uint(base::val_);
         if (is_int()) [[likely]] {
             auto ret = yyjson_mut_get_int(base::val_);
             if (ret >= 0) return ret;
         }
-        return std::nullopt;
+        return luisa::nullopt;
     }
     // with checking overflow
-    [[nodiscard]] std::optional<std::int64_t> as_sint() const noexcept {
+    [[nodiscard]] luisa::optional<std::int64_t> as_sint() const noexcept {
         if (is_sint()) return yyjson_mut_get_sint(base::val_);
         if (is_uint()) [[likely]] {
             auto ret = yyjson_mut_get_uint(base::val_);
             if (ret <= std::numeric_limits<std::int64_t>::max()) return ret;
         }
-        return std::nullopt;
+        return luisa::nullopt;
     }
     // without checking overflow
-    [[nodiscard]] std::optional<std::int64_t> as_int() const noexcept {
+    [[nodiscard]] luisa::optional<std::int64_t> as_int() const noexcept {
         if (is_int()) [[likely]]
             return yyjson_mut_get_sint(base::val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<double> as_real() const noexcept {
+    [[nodiscard]] luisa::optional<double> as_real() const noexcept {
         if (is_real()) [[likely]]
             return yyjson_mut_get_real(base::val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<double> as_num() const noexcept {
+    [[nodiscard]] luisa::optional<double> as_num() const noexcept {
         if (is_real()) return yyjson_mut_get_real(base::val_);
         if (is_int()) [[likely]]
             return yyjson_mut_get_sint(base::val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<std::string_view> as_string() const noexcept {
+    [[nodiscard]] luisa::optional<std::string_view> as_string() const noexcept {
         if (is_string()) [[likely]]
             return std::string_view(yyjson_mut_get_str(base::val_), yyjson_mut_get_len(base::val_));
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<const_array_ref> as_array() const noexcept;
-    [[nodiscard]] std::optional<const_object_ref> as_object() const noexcept;
+    [[nodiscard]] luisa::optional<const_array_ref> as_array() const noexcept;
+    [[nodiscard]] luisa::optional<const_object_ref> as_object() const noexcept;
 };
 
 template<typename DocType>
@@ -1500,10 +1503,10 @@ public:
         return *this;
     };
 
-    [[nodiscard]] std::optional<array_ref> as_array() & noexcept;
-    [[nodiscard]] std::optional<as_array_type> as_array() && noexcept;
-    [[nodiscard]] std::optional<object_ref> as_object() & noexcept;
-    [[nodiscard]] std::optional<as_object_type> as_object() && noexcept;
+    [[nodiscard]] luisa::optional<array_ref> as_array() & noexcept;
+    [[nodiscard]] luisa::optional<as_array_type> as_array() && noexcept;
+    [[nodiscard]] luisa::optional<object_ref> as_object() & noexcept;
+    [[nodiscard]] luisa::optional<as_object_type> as_object() && noexcept;
     [[nodiscard]] auto as_array() const & noexcept { return base::as_array(); }
     [[nodiscard]] auto as_object() const & noexcept { return base::as_object(); }
 };
@@ -2073,23 +2076,23 @@ public:
 };
 
 template<typename DocType>
-std::optional<const_array_ref> const_value_base<DocType>::as_array() const noexcept {
+luisa::optional<const_array_ref> const_value_base<DocType>::as_array() const noexcept {
     if (is_array()) [[likely]]
         return const_array_ref(*this);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 template<typename DocType>
-std::optional<array_ref> mutable_value_base<DocType>::as_array() & noexcept {
+luisa::optional<array_ref> mutable_value_base<DocType>::as_array() & noexcept {
     if (base::is_array()) [[likely]]
         return array_ref(*this);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 template<typename DocType>
-std::optional<typename mutable_value_base<DocType>::as_array_type>
+luisa::optional<typename mutable_value_base<DocType>::as_array_type>
 mutable_value_base<DocType>::as_array() && noexcept {
     if (base::is_array()) [[likely]]
         return as_array_type(std::move(*this));
-    return std::nullopt;
+    return luisa::nullopt;
 }
 
 template<typename DocType>
@@ -2568,23 +2571,23 @@ public:
 };
 
 template<typename DocType>
-std::optional<const_object_ref> const_value_base<DocType>::as_object() const noexcept {
+luisa::optional<const_object_ref> const_value_base<DocType>::as_object() const noexcept {
     if (is_object()) [[likely]]
         return const_object_ref(*this);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 template<typename DocType>
-std::optional<object_ref> mutable_value_base<DocType>::as_object() & noexcept {
+luisa::optional<object_ref> mutable_value_base<DocType>::as_object() & noexcept {
     if (base::is_object()) [[likely]]
         return object_ref(*this);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 template<typename DocType>
-std::optional<typename mutable_value_base<DocType>::as_object_type>
+luisa::optional<typename mutable_value_base<DocType>::as_object_type>
 mutable_value_base<DocType>::as_object() && noexcept {
     if (base::is_object()) [[likely]]
         return as_object_type(std::move(*this));
-    return std::nullopt;
+    return luisa::nullopt;
 }
 
 }// namespace detail
@@ -2638,7 +2641,7 @@ public:
         auto len = static_cast<std::size_t>(0);
         auto result = yyjson_val_write_opts(val_, to_underlying(write_flag), detail::get_allocator_pointer(alc),
                                             &len, &err);
-        if constexpr (std::same_as<std::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
+        if constexpr (std::same_as<luisa::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
             if (result != nullptr) [[likely]]
                 return json_string(result, len, alc.ptr());
         } else {
@@ -2680,58 +2683,58 @@ public:
     [[nodiscard]] auto is_object() const noexcept { return yyjson_is_obj(val_); }
     [[nodiscard]] auto is_container() const noexcept { return yyjson_is_ctn(val_); }
 
-    [[nodiscard]] std::optional<std::nullptr_t> as_null() const noexcept {
+    [[nodiscard]] luisa::optional<std::nullptr_t> as_null() const noexcept {
         if (is_null()) [[likely]]
             return nullptr;
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<bool> as_bool() const noexcept {
+    [[nodiscard]] luisa::optional<bool> as_bool() const noexcept {
         if (is_bool()) [[likely]]
             return yyjson_get_bool(val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<std::uint64_t> as_uint() const noexcept {
+    [[nodiscard]] luisa::optional<std::uint64_t> as_uint() const noexcept {
         if (is_uint()) return yyjson_get_uint(val_);
         if (is_int()) [[likely]] {
             auto ret = yyjson_get_int(val_);
             if (ret >= 0) return ret;
         }
-        return std::nullopt;
+        return luisa::nullopt;
     }
     // with checking overflow
-    [[nodiscard]] std::optional<std::int64_t> as_sint() const noexcept {
+    [[nodiscard]] luisa::optional<std::int64_t> as_sint() const noexcept {
         if (is_sint()) return yyjson_get_sint(val_);
         if (is_uint()) [[likely]] {
             auto ret = yyjson_get_uint(val_);
             if (ret <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return ret;
         }
-        return std::nullopt;
+        return luisa::nullopt;
     }
     // without checking overflow
-    [[nodiscard]] std::optional<std::int64_t> as_int() const noexcept {
+    [[nodiscard]] luisa::optional<std::int64_t> as_int() const noexcept {
         if (is_int()) [[likely]]
             return yyjson_get_sint(val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<double> as_real() const noexcept {
+    [[nodiscard]] luisa::optional<double> as_real() const noexcept {
         if (is_real()) [[likely]]
             return yyjson_get_real(val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<double> as_num() const noexcept {
+    [[nodiscard]] luisa::optional<double> as_num() const noexcept {
         if (is_real()) return yyjson_get_real(val_);
         if (is_int()) [[likely]]
             return yyjson_get_sint(val_);
-        return std::nullopt;
+        return luisa::nullopt;
     }
-    [[nodiscard]] std::optional<std::string_view> as_string() const noexcept {
+    [[nodiscard]] luisa::optional<std::string_view> as_string() const noexcept {
         if (is_string()) [[likely]]
             return std::string_view(yyjson_get_str(val_), yyjson_get_len(val_));
-        return std::nullopt;
+        return luisa::nullopt;
     }
 
-    [[nodiscard]] std::optional<const_array_ref> as_array() const noexcept;
-    [[nodiscard]] std::optional<const_object_ref> as_object() const noexcept;
+    [[nodiscard]] luisa::optional<const_array_ref> as_array() const noexcept;
+    [[nodiscard]] luisa::optional<const_object_ref> as_object() const noexcept;
 
     [[nodiscard]] auto operator[](std::string_view key) const;
 
@@ -2850,10 +2853,10 @@ public:
         return cast<T>();
     }
 };
-[[nodiscard]] inline std::optional<const_array_ref> const_value_ref::as_array() const noexcept {
+[[nodiscard]] inline luisa::optional<const_array_ref> const_value_ref::as_array() const noexcept {
     if (is_array()) [[likely]]
         return const_array_ref(base::val_);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 inline const_array_iter &const_array_iter::operator++() {
     const_array_ref::array_iter_next(iter_);
@@ -2969,10 +2972,10 @@ public:
         return cast<T>();
     }
 };
-[[nodiscard]] inline std::optional<const_object_ref> const_value_ref::as_object() const noexcept {
+[[nodiscard]] inline luisa::optional<const_object_ref> const_value_ref::as_object() const noexcept {
     if (is_object()) [[likely]]
         return const_object_ref(base::val_);
-    return std::nullopt;
+    return luisa::nullopt;
 }
 [[nodiscard]] auto const_value_ref::operator[](std::string_view key) const {
     return as_object().value()[key];
@@ -2993,14 +2996,14 @@ value read(char *, std::size_t, Alloc &, ReadFlag = ReadFlag::NoFlag);
 
 class value final : public const_value_ref {
     using base = const_value_ref;
-    std::shared_ptr<yyjson_doc> doc_;
+    luisa::shared_ptr<yyjson_doc> doc_;
 
     explicit value(yyjson_doc *doc)
         : base(yyjson_doc_get_root(doc)),
-          doc_(std::shared_ptr<yyjson_doc>(doc, [](auto *ptr) { yyjson_doc_free(ptr); })) {
+          doc_(luisa::shared_ptr<yyjson_doc>(doc, [](auto *ptr) { yyjson_doc_free(ptr); })) {
     }
-    value(yyjson_doc *doc, const std::shared_ptr<yyjson_alc> &alc)
-        : base(yyjson_doc_get_root(doc)), doc_(std::shared_ptr<yyjson_doc>(doc, [alc = alc](auto *ptr) mutable {
+    value(yyjson_doc *doc, const luisa::shared_ptr<yyjson_alc> &alc)
+        : base(yyjson_doc_get_root(doc)), doc_(luisa::shared_ptr<yyjson_doc>(doc, [alc = alc](auto *ptr) mutable {
               yyjson_doc_free(ptr);
               alc.reset();
           })) {
@@ -3028,7 +3031,7 @@ public:
         auto len = static_cast<std::size_t>(0);
         auto result = yyjson_write_opts(doc_.get(), to_underlying(write_flag),
                                         detail::get_allocator_pointer(alc), &len, &err);
-        if constexpr (std::same_as<std::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
+        if constexpr (std::same_as<luisa::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
             if (result != nullptr) [[likely]]
                 return json_string(result, len, alc.ptr());
         } else {
@@ -3044,21 +3047,21 @@ public:
     friend class array;
     friend class object;
 
-    std::optional<std::string> as_string() && noexcept {
+    luisa::optional<luisa::string> as_string() && noexcept {
         if (is_string()) [[likely]]
-            return std::string(yyjson_get_str(val_), yyjson_get_len(val_));
-        return std::nullopt;
+            return luisa::string(yyjson_get_str(val_), yyjson_get_len(val_));
+        return luisa::nullopt;
     };
     [[nodiscard]] auto as_string() const & noexcept { return base::as_string(); }
-    std::optional<array> as_array() &&;
+    luisa::optional<array> as_array() &&;
     [[nodiscard]] auto as_array() const & noexcept { return base::as_array(); }
-    std::optional<object> as_object() &&;
+    luisa::optional<object> as_object() &&;
     [[nodiscard]] auto as_object() const & noexcept { return base::as_object(); }
 };
 
 class array final : public const_array_ref {
     using base = const_array_ref;
-    std::shared_ptr<yyjson_doc> doc_;
+    luisa::shared_ptr<yyjson_doc> doc_;
 
 public:
     array(const array &) = default;
@@ -3073,15 +3076,15 @@ public:
     array &operator=(const array &) = default;
     array &operator=(array &&) = default;
 };
-inline std::optional<array> value::as_array() && {
+inline luisa::optional<array> value::as_array() && {
     if (is_array()) [[likely]]
         return array(std::move(*this));
-    return std::nullopt;
+    return luisa::nullopt;
 }
 
 class object final : public const_object_ref {
     using base = const_object_ref;
-    std::shared_ptr<yyjson_doc> doc_;
+    luisa::shared_ptr<yyjson_doc> doc_;
 
 public:
     object(const object &) = default;
@@ -3096,10 +3099,10 @@ public:
     object &operator=(const object &) = default;
     object &operator=(object &&) = default;
 };
-inline std::optional<object> value::as_object() && {
+inline luisa::optional<object> value::as_object() && {
     if (is_object()) [[likely]]
         return object(std::move(*this));
-    return std::nullopt;
+    return luisa::nullopt;
 }
 
 #pragma region read
@@ -3118,7 +3121,7 @@ value read(char *str, std::size_t len, Alloc &alc, ReadFlag read_flag) {
     }
     result = yyjson_read_opts(str, len, to_underlying(read_flag), detail::get_allocator_pointer(alc), &err);
 
-    if constexpr (std::same_as<std::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
+    if constexpr (std::same_as<luisa::shared_ptr<yyjson_alc>, std::remove_cvref_t<decltype(alc.ptr())>>) {
         if (result != nullptr) return value(result, alc.ptr());
     } else {
         if (result != nullptr) return value(result);
@@ -3132,7 +3135,7 @@ value read(const char *str, std::size_t len, Alloc &alc, const ReadFlag read_fla
     return read(const_cast<char *>(str), len, alc, read_flag);
 }
 template<yyjson_allocator Alloc>
-value read(std::string &str, std::size_t len, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
+value read(luisa::string &str, std::size_t len, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
     if ((read_flag & ReadFlag::ReadInsitu) != ReadFlag::NoFlag) {
         if (str.size() < len + YYJSON_PADDING_SIZE)
             LUISA_ASSERT(false,
@@ -3142,7 +3145,7 @@ value read(std::string &str, std::size_t len, Alloc &alc, const ReadFlag read_fl
     return read(str.data(), len, alc, read_flag);
 }
 template<yyjson_allocator Alloc>
-value read(const std::string &str, std::size_t len, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
+value read(const luisa::string &str, std::size_t len, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
     if (str.size() < len)
         LUISA_ASSERT(false, "The specified JSON length is greater than the string size");
     return read(str.c_str(), len, alc, read_flag);
@@ -3159,11 +3162,11 @@ value read(char *str, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str, std::strlen(str), alc, read_flag);
 }
 template<yyjson_allocator Alloc>
-value read(std::string &str, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
+value read(luisa::string &str, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str.data(), str.size(), alc, read_flag);
 }
 template<yyjson_allocator Alloc>
-value read(const std::string &str, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
+value read(const luisa::string &str, Alloc &alc, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str.c_str(), str.size(), alc, read_flag);
 }
 template<yyjson_allocator Alloc>
@@ -3196,7 +3199,7 @@ inline value read(const char *str, std::size_t len, const ReadFlag read_flag = R
                  "ReadInsitu flag cannot be specified with const string");
     return read(const_cast<char *>(str), len, read_flag);
 }
-inline value read(std::string &str, std::size_t len, const ReadFlag read_flag = ReadFlag::NoFlag) {
+inline value read(luisa::string &str, std::size_t len, const ReadFlag read_flag = ReadFlag::NoFlag) {
     if ((read_flag & ReadFlag::ReadInsitu) != ReadFlag::NoFlag) {
         if (str.size() < len + YYJSON_PADDING_SIZE)
             LUISA_ASSERT(false,
@@ -3205,7 +3208,7 @@ inline value read(std::string &str, std::size_t len, const ReadFlag read_flag = 
         LUISA_ASSERT(false, "The specified JSON length is greater than the string size");
     return read(str.data(), len, read_flag);
 }
-inline value read(const std::string &str, std::size_t len, const ReadFlag read_flag = ReadFlag::NoFlag) {
+inline value read(const luisa::string &str, std::size_t len, const ReadFlag read_flag = ReadFlag::NoFlag) {
     if (str.size() < len)
         LUISA_ASSERT(false, "The specified JSON length is greater than the string size");
     return read(str.c_str(), str.size(), read_flag);
@@ -3219,10 +3222,10 @@ inline value read(std::string_view str, std::size_t len, const ReadFlag read_fla
 inline value read(char *str, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str, std::strlen(str), read_flag);
 }
-inline value read(std::string &str, const ReadFlag read_flag = ReadFlag::NoFlag) {
+inline value read(luisa::string &str, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str.data(), str.size(), read_flag);
 }
-inline value read(const std::string &str, const ReadFlag read_flag = ReadFlag::NoFlag) {
+inline value read(const luisa::string &str, const ReadFlag read_flag = ReadFlag::NoFlag) {
     return read(str.c_str(), str.size(), read_flag);
 }
 inline value read(std::string_view str, const ReadFlag read_flag = ReadFlag::NoFlag) {
@@ -3258,13 +3261,13 @@ concept castable = requires(Json json) {
 };
 
 template<typename T>
-struct caster<std::optional<T>> {
+struct caster<luisa::optional<T>> {
     template<detail::copy_string_args... Ts>
         requires requires(writer::value_ref &v, T t) {
             v = t;
             v = std::pair(t, copy_string);
         }
-    static auto to_json(writer::value_ref &v, const std::optional<T> &t, Ts...) {
+    static auto to_json(writer::value_ref &v, const luisa::optional<T> &t, Ts...) {
         constexpr auto copy = (sizeof...(Ts) != 0);
         if constexpr (copy) {
             if (t.has_value()) v = std::pair(*t, copy_string);
@@ -3277,7 +3280,7 @@ struct caster<std::optional<T>> {
             v = t;
             v = std::pair(t, copy_string);
         }
-    static auto to_json(writer::value_ref &v, std::optional<T> &&t, Ts...) {
+    static auto to_json(writer::value_ref &v, luisa::optional<T> &&t, Ts...) {
         constexpr auto copy = (sizeof...(Ts) != 0);
         if constexpr (copy) {
             if (t.has_value()) v = std::pair(std::move(*t), copy_string);

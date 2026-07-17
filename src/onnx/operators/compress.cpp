@@ -1,6 +1,8 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/optional.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -8,22 +10,22 @@ namespace lcml::onnx {
 // ONNX spec: input[0]=data, input[1]=condition (1-D bool); optional attribute axis
 class Compress : public Operator {
 private:
-    std::optional<int64_t> axis_;
+    luisa::optional<int64_t> axis_;
 
 public:
-    Compress(std::optional<int64_t> axis) : Operator("Compress"), axis_(axis) {}
+    Compress(luisa::optional<int64_t> axis) : Operator("Compress"), axis_(axis) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Compress requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
         auto &output = outputs[0].get();
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "Compress: data and output must have the same element type.");
-        LUISA_ASSERT(inputs[1].get().element_type() == typeid(bool),
+        LUISA_ASSERT(inputs[1].get().element_type_index() == refl::type_index_of<bool>(),
                      "Compress: condition must be bool type.");
 #else
         auto &data = inputs[0].get();
@@ -32,7 +34,7 @@ public:
 
         // If no axis, data is flattened first
         // Output is already shaped by the runtime
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
             auto &cond = static_cast<NNTensor<bool> &>(inputs[1].get());
@@ -153,10 +155,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Compress) {
-    std::optional<int64_t> axis;
+    luisa::optional<int64_t> axis;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Compress>(axis);
+    return luisa::make_unique<Compress>(axis);
 };
 
 }// namespace lcml::onnx

@@ -1,6 +1,8 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -30,40 +32,40 @@ public:
         // Indices must be constant with raw_data available
         if (!idx_var.is_constant() || idx_var.get_raw_data().empty()) return false;
 
-        // Parse constant int indices
+        // Parse constant int32_t indices
         auto const &raw = idx_var.get_raw_data();
         size_t num_indices = 1;
         for (auto d : idx_var.get_shape()) num_indices *= d;
         if (num_indices == 0) return false;
 
-        std::vector<int> indices(num_indices);
+        luisa::vector<int32_t> indices(num_indices);
         if (idx_var.get_dtype() == onnx::DataType::INT64) {
             auto const *src = reinterpret_cast<int64_t const *>(raw.data());
-            for (size_t i = 0; i < num_indices; ++i) indices[i] = static_cast<int>(src[i]);
+            for (size_t i = 0; i < num_indices; ++i) indices[i] = static_cast<int32_t>(src[i]);
         } else {
             auto const *src = reinterpret_cast<int32_t const *>(raw.data());
             for (size_t i = 0; i < num_indices; ++i) indices[i] = src[i];
         }
 
-        int dim0 = static_cast<int>(data_var.get_shape()[0]);
+        int32_t dim0 = static_cast<int32_t>(data_var.get_shape()[0]);
 
         // Single scalar index -> always a view
         if (num_indices == 1) return true;
 
         // Check consecutive indices -> contiguous sub-region -> view
-        int start_val = indices[0];
+        int32_t start_val = indices[0];
         if (start_val < 0) start_val += dim0;
         if (start_val < 0 || start_val >= dim0) return false;
         for (size_t i = 1; i < num_indices; ++i) {
-            int v = indices[i];
+            int32_t v = indices[i];
             if (v < 0) v += dim0;
-            if (v != start_val + static_cast<int>(i)) return false;
+            if (v != start_val + static_cast<int32_t>(i)) return false;
         }
         return true;
     }
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1,
                      "Gather requires 2 inputs and 1 output.");
         auto &data = inputs[0].get();
@@ -74,14 +76,14 @@ public:
         auto ndim = data.ndim();
         int64_t axis = axis_ < 0 ? axis_ + ndim : axis_;
 
-        LUISA_ASSERT(data.element_type() == output.element_type(),
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(),
                      "Gather: data and output must have the same element type.");
-        LUISA_ASSERT(indices.element_type() == typeid(int) || indices.element_type() == typeid(slong),
-                     "Gather: indices must be int or int64 type.");
+        LUISA_ASSERT(indices.element_type_index() == refl::type_index_of<int32_t>() || indices.element_type_index() == refl::type_index_of<slong>(),
+                     "Gather: indices must be int32_t or int64 type.");
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
-            auto &idx_tensor = static_cast<NNTensor<int> &>(indices);
+            auto &idx_tensor = static_cast<NNTensor<int32_t> &>(indices);
             auto &out = static_cast<NNTensor<T> &>(output);
             auto const &out_shape = out.shape();
             auto out_ndim = out.ndim();
@@ -121,9 +123,9 @@ public:
 
             // Fast path: axis == 0, single constant scalar index -> explicit copy
             if (axis == 0 && indices.size() == 1 && indices.is_constant()) {
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
-                int index_val = static_cast<int>(idx_const.const_data()[0]);
-                if (index_val < 0) index_val += static_cast<int>(in.shape()[0]);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
+                int32_t index_val = static_cast<int32_t>(idx_const.const_data()[0]);
+                if (index_val < 0) index_val += static_cast<int32_t>(in.shape()[0]);
                 size_t offset = static_cast<size_t>(index_val) * in.strides()[0];
                 // If already sharing storage (inplace), skip
                 if (!in.container().shares_storage_with(out.container())) {
@@ -134,17 +136,17 @@ public:
 
             // Fast path: axis == 0, constant consecutive indices [S, S+1, ..., S+N-1] -> View
             if (axis == 0 && indices.is_constant()) {
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
                 auto const &cpu_idx = idx_const.const_data();
                 auto num_indices = indices.size();
                 if (num_indices > 0) {
-                    int start_val = static_cast<int>(cpu_idx[0]);
-                    if (start_val < 0) start_val += static_cast<int>(in.shape()[0]);
+                    int32_t start_val = static_cast<int32_t>(cpu_idx[0]);
+                    if (start_val < 0) start_val += static_cast<int32_t>(in.shape()[0]);
                     bool consecutive = start_val >= 0;
                     for (uint32_t i = 1; consecutive && i < num_indices; ++i) {
-                        int v = static_cast<int>(cpu_idx[i]);
-                        if (v < 0) v += static_cast<int>(in.shape()[0]);
-                        if (v != start_val + static_cast<int>(i)) consecutive = false;
+                        int32_t v = static_cast<int32_t>(cpu_idx[i]);
+                        if (v < 0) v += static_cast<int32_t>(in.shape()[0]);
+                        if (v != start_val + static_cast<int32_t>(i)) consecutive = false;
                     }
                     if (consecutive) {
                         size_t offset = static_cast<size_t>(start_val) * in.strides()[0];
@@ -162,10 +164,10 @@ public:
 
             // Fast path: constant indices (any axis, small) -> precompute offsets and vectorize
             if (indices.is_constant() && indices.size() <= 128) {
-                auto &idx_const = static_cast<NNConstTensor<int> const &>(indices);
+                auto &idx_const = static_cast<NNConstTensor<int32_t> const &>(indices);
                 auto const &cpu_idx = idx_const.const_data();
 
-                std::vector<uint32_t> data_offsets;
+                luisa::vector<uint32_t> data_offsets;
                 data_offsets.reserve(out.size());
                 for (uint32_t linear_out = 0; linear_out < out.size(); ++linear_out) {
                     uint32_t idx_linear = 0;
@@ -184,8 +186,8 @@ public:
                             final_in += coord * in.strides()[data_dim];
                         }
                     }
-                    int gathered_idx = static_cast<int>(cpu_idx[idx_linear]);
-                    auto dim_size = static_cast<int>(in.shape()[axis]);
+                    int32_t gathered_idx = static_cast<int32_t>(cpu_idx[idx_linear]);
+                    auto dim_size = static_cast<int32_t>(in.shape()[axis]);
                     if (gathered_idx < 0) gathered_idx += dim_size;
                     final_in += static_cast<uint32_t>(gathered_idx) * in.strides()[axis];
                     data_offsets.push_back(final_in);
@@ -264,7 +266,7 @@ public:
                     }, out.size());
 
                     auto gathered_idx_signed = idx_tensor[idx_linear];
-                    auto dim_size = static_cast<int>(in.shape()[axis]);
+                    auto dim_size = static_cast<int32_t>(in.shape()[axis]);
                     gathered_idx_signed = select(gathered_idx_signed + dim_size,
                                                  gathered_idx_signed,
                                                  gathered_idx_signed < 0);
@@ -294,7 +296,7 @@ public:
                 }, out.size());
 
                 auto gathered_idx_signed = idx_tensor[idx_linear];
-                auto dim_size = static_cast<int>(in.shape()[axis]);
+                auto dim_size = static_cast<int32_t>(in.shape()[axis]);
                 gathered_idx_signed = select(gathered_idx_signed + dim_size,
                                              gathered_idx_signed,
                                              gathered_idx_signed < 0);
@@ -312,7 +314,7 @@ REGISTER_TO_DEFAULT_OPSET(Gather) {
     int64_t axis = 0;
     if (auto p = node.try_get_attr("axis"))
         axis = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<Gather>(axis);
+    return luisa::make_unique<Gather>(axis);
 };
 
 }// namespace lcml::onnx

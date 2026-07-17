@@ -1,8 +1,11 @@
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
-#include <sstream>
-#include <algorithm>
+#include <luisa/core/stl/algorithm.h>
+#include <luisa/core/stl/string.h>
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/unordered_map.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -29,18 +32,18 @@ namespace lcml::onnx {
 // ============================================================================
 class Einsum : public Operator {
 private:
-    std::string equation_;
+    luisa::string equation_;
 
     // Internal label alphabet for ellipsis expansion.
     // We use uppercase letters (A-Z) which won't conflict with user labels (a-z).
-    static char ellipsis_label(int idx) {
+    static char ellipsis_label(int32_t idx) {
         LUISA_ASSERT(idx < 26, "Einsum: ellipsis expansion exceeds 26 dimensions");
         return static_cast<char>('A' + idx);
     }
 
     // Remove all spaces from string
-    static std::string strip(const std::string &s) {
-        std::string r;
+    static luisa::string strip(const luisa::string &s) {
+        luisa::string r;
         r.reserve(s.size());
         for (char c : s)
             if (c != ' ') r += c;
@@ -48,18 +51,24 @@ private:
     }
 
     // Split a string by delimiter
-    static std::vector<std::string> split(const std::string &s, char delim) {
-        std::vector<std::string> parts;
-        std::istringstream ss(s);
-        std::string token;
-        while (std::getline(ss, token, delim))
-            parts.push_back(token);
+    static luisa::vector<luisa::string> split(const luisa::string &s, char delim) {
+        luisa::vector<luisa::string> parts;
+        size_t start = 0;
+        while (true) {
+            auto pos = s.find(delim, start);
+            if (pos == luisa::string::npos) {
+                parts.push_back(s.substr(start));
+                break;
+            }
+            parts.push_back(s.substr(start, pos - start));
+            start = pos + 1;
+        }
         return parts;
     }
 
     // Count explicit (non-ellipsis) labels in a subscript
-    static int count_explicit_labels(const std::string &sub) {
-        int n = 0;
+    static int32_t count_explicit_labels(const luisa::string &sub) {
+        int32_t n = 0;
         for (size_t i = 0; i < sub.size(); ++i) {
             if (sub[i] == '.') {
                 // Skip the entire "..."
@@ -74,15 +83,15 @@ private:
     }
 
     // Check if subscript contains ellipsis
-    static bool has_ellipsis(const std::string &sub) {
-        return sub.find("...") != std::string::npos;
+    static bool has_ellipsis(const luisa::string &sub) {
+        return sub.find("...") != luisa::string::npos;
     }
 
     // Expand a subscript's ellipsis with the given labels string,
     // returning a new subscript with "..." replaced by those labels.
-    static std::string expand_ellipsis(const std::string &sub,
-                                       const std::string &ellipsis_labels) {
-        std::string result;
+    static luisa::string expand_ellipsis(const luisa::string &sub,
+                                       const luisa::string &ellipsis_labels) {
+        luisa::string result;
         for (size_t i = 0; i < sub.size(); ++i) {
             if (sub[i] == '.' && i + 2 < sub.size() && sub[i + 1] == '.' && sub[i + 2] == '.') {
                 result += ellipsis_labels;
@@ -95,21 +104,21 @@ private:
     }
 
     struct ParsedEquation {
-        std::vector<std::string> input_subs;// expanded (no ellipsis)
-        std::string output_sub;             // expanded (no ellipsis)
+        luisa::vector<luisa::string> input_subs;// expanded (no ellipsis)
+        luisa::string output_sub;             // expanded (no ellipsis)
     };
 
     // Full equation parser with ellipsis support.
     static ParsedEquation parse_equation(
-        const std::string &eq,
-        const std::vector<ITensor::shape_type> &input_shapes) {
+        const luisa::string &eq,
+        const luisa::vector<ITensor::shape_type> &input_shapes) {
 
-        std::string clean = strip(eq);
-        std::string lhs, rhs;
+        luisa::string clean = strip(eq);
+        luisa::string lhs, rhs;
         bool has_arrow = false;
 
         auto arrow = clean.find("->");
-        if (arrow != std::string::npos) {
+        if (arrow != luisa::string::npos) {
             lhs = clean.substr(0, arrow);
             rhs = clean.substr(arrow + 2);
             has_arrow = true;
@@ -130,18 +139,18 @@ private:
         if (has_arrow && has_ellipsis(rhs)) any_ellipsis = true;
 
         // Compute ellipsis expansion
-        std::string ellipsis_labels;
+        luisa::string ellipsis_labels;
         if (any_ellipsis) {
             // For each input with ellipsis, compute how many dims the ellipsis covers
             // ellipsis_ndim = tensor_ndim - num_explicit_labels
             // All inputs must agree on broadcast-compatible ellipsis shapes.
-            int max_ellipsis_ndim = 0;
-            std::vector<int> ellipsis_ndims(raw_subs.size(), 0);
+            int32_t max_ellipsis_ndim = 0;
+            luisa::vector<int32_t> ellipsis_ndims(raw_subs.size(), 0);
 
             for (size_t t = 0; t < raw_subs.size(); ++t) {
                 if (has_ellipsis(raw_subs[t])) {
-                    int explicit_n = count_explicit_labels(raw_subs[t]);
-                    int ndim = static_cast<int>(input_shapes[t].size());
+                    int32_t explicit_n = count_explicit_labels(raw_subs[t]);
+                    int32_t ndim = static_cast<int32_t>(input_shapes[t].size());
                     ellipsis_ndims[t] = ndim - explicit_n;
                     LUISA_ASSERT(ellipsis_ndims[t] >= 0,
                                  "Einsum: subscript '{}' has more explicit labels ({}) than tensor dims ({})",
@@ -152,21 +161,21 @@ private:
 
             // Broadcast ellipsis dimensions across all inputs
             // ellipsis_shape[k] = broadcast of all inputs' ellipsis dim k
-            std::vector<uint32_t> ellipsis_shape(max_ellipsis_ndim, 1u);
+            luisa::vector<uint32_t> ellipsis_shape(max_ellipsis_ndim, 1u);
 
             for (size_t t = 0; t < raw_subs.size(); ++t) {
                 if (!has_ellipsis(raw_subs[t])) continue;
-                int e_ndim = ellipsis_ndims[t];
+                int32_t e_ndim = ellipsis_ndims[t];
                 // Find where ellipsis starts in the tensor shape
                 // by finding position of "..." in the subscript
                 auto dot_pos = raw_subs[t].find("...");
-                int labels_before = static_cast<int>(dot_pos);
+                int32_t labels_before = static_cast<int32_t>(dot_pos);
 
                 // Ellipsis dims are right-aligned for broadcasting
-                int offset = max_ellipsis_ndim - e_ndim;
-                for (int k = 0; k < e_ndim; ++k) {
+                int32_t offset = max_ellipsis_ndim - e_ndim;
+                for (int32_t k = 0; k < e_ndim; ++k) {
                     uint32_t dim_size = input_shapes[t][labels_before + k];
-                    int bk = offset + k;// broadcast-aligned index
+                    int32_t bk = offset + k;// broadcast-aligned index
                     if (ellipsis_shape[bk] == 1u) {
                         ellipsis_shape[bk] = dim_size;
                     } else {
@@ -179,7 +188,7 @@ private:
             }
 
             // Generate internal labels for ellipsis dims
-            for (int k = 0; k < max_ellipsis_ndim; ++k) {
+            for (int32_t k = 0; k < max_ellipsis_ndim; ++k) {
                 ellipsis_labels += ellipsis_label(k);
             }
         }
@@ -190,8 +199,8 @@ private:
             if (has_ellipsis(s)) {
                 // For inputs with fewer ellipsis dims than max, pad with size-1 dims
                 // by inserting extra labels at the front of the ellipsis expansion
-                int e_ndim_this = static_cast<int>(input_shapes[&s - &raw_subs[0]].size()) - count_explicit_labels(s);
-                int pad = static_cast<int>(ellipsis_labels.size()) - e_ndim_this;
+                int32_t e_ndim_this = static_cast<int32_t>(input_shapes[&s - &raw_subs[0]].size()) - count_explicit_labels(s);
+                int32_t pad = static_cast<int32_t>(ellipsis_labels.size()) - e_ndim_this;
                 // The full ellipsis_labels covers all broadcast dims.
                 // For this input, the first 'pad' labels are broadcast (dim=1).
                 result.input_subs.push_back(expand_ellipsis(s, ellipsis_labels.substr(pad)));
@@ -209,7 +218,7 @@ private:
         } else {
             // Implicit output mode: labels appearing exactly once, sorted.
             // Ellipsis labels go first (leftmost), then sorted free labels.
-            std::unordered_map<char, int> count;
+            luisa::unordered_map<char, int32_t> count;
             for (auto &s : result.input_subs)
                 for (char c : s) count[c]++;
 
@@ -218,13 +227,13 @@ private:
                 result.output_sub = ellipsis_labels;
             }
             // Free labels (appear exactly once) in sorted order
-            std::string free_labels;
+            luisa::string free_labels;
             for (auto &[c, n] : count) {
-                if (n == 1 && ellipsis_labels.find(c) == std::string::npos) {
+                if (n == 1 && ellipsis_labels.find(c) == luisa::string::npos) {
                     free_labels += c;
                 }
             }
-            std::sort(free_labels.begin(), free_labels.end());
+            luisa::sort(free_labels.begin(), free_labels.end());
             result.output_sub += free_labels;
         }
 
@@ -232,16 +241,16 @@ private:
     }
 
 public:
-    Einsum(std::string equation) : Operator("Einsum"), equation_(std::move(equation)) {}
+    Einsum(luisa::string equation) : Operator("Einsum"), equation_(std::move(equation)) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
         LUISA_ASSERT(!inputs.empty() && outputs.size() == 1,
                      "Einsum requires >=1 inputs and 1 output.");
         auto &Y = outputs[0].get();
 
         // Collect input shapes
-        std::vector<ITensor::shape_type> input_shapes;
+        luisa::vector<ITensor::shape_type> input_shapes;
         input_shapes.reserve(inputs.size());
         for (auto &inp : inputs)
             input_shapes.push_back(inp.get().shape());
@@ -256,8 +265,8 @@ public:
                      input_subs.size(), inputs.size());
 
         // Collect all unique labels and determine their dimension sizes
-        std::string all_labels;// ordered unique labels
-        std::unordered_map<char, uint32_t> label_size;
+        luisa::string all_labels;// ordered unique labels
+        luisa::unordered_map<char, uint32_t> label_size;
 
         for (size_t t = 0; t < inputs.size(); ++t) {
             auto &sub = input_subs[t];
@@ -288,34 +297,34 @@ public:
         }
 
         // Separate into output labels and contraction labels
-        std::string contract_labels;
+        luisa::string contract_labels;
         for (char c : all_labels) {
-            if (output_sub.find(c) == std::string::npos) {
+            if (output_sub.find(c) == luisa::string::npos) {
                 contract_labels += c;
             }
         }
 
         // Build output label sizes and strides (row-major) for coordinate decomposition
         uint32_t out_ndim = static_cast<uint32_t>(output_sub.size());
-        std::vector<uint32_t> out_label_sizes(out_ndim);
+        luisa::vector<uint32_t> out_label_sizes(out_ndim);
         for (uint32_t i = 0; i < out_ndim; ++i) {
             out_label_sizes[i] = label_size[output_sub[i]];
         }
-        std::vector<uint32_t> out_strides(out_ndim, 1u);
-        for (int i = static_cast<int>(out_ndim) - 2; i >= 0; --i) {
+        luisa::vector<uint32_t> out_strides(out_ndim, 1u);
+        for (int32_t i = static_cast<int32_t>(out_ndim) - 2; i >= 0; --i) {
             out_strides[i] = out_strides[i + 1] * out_label_sizes[i + 1];
         }
 
         // Build contraction label sizes and strides
         uint32_t con_ndim = static_cast<uint32_t>(contract_labels.size());
-        std::vector<uint32_t> con_sizes(con_ndim);
+        luisa::vector<uint32_t> con_sizes(con_ndim);
         uint32_t con_total = 1;
         for (uint32_t i = 0; i < con_ndim; ++i) {
             con_sizes[i] = label_size[contract_labels[i]];
             con_total *= con_sizes[i];
         }
-        std::vector<uint32_t> con_strides(con_ndim, 1u);
-        for (int i = static_cast<int>(con_ndim) - 2; i >= 0; --i) {
+        luisa::vector<uint32_t> con_strides(con_ndim, 1u);
+        for (int32_t i = static_cast<int32_t>(con_ndim) - 2; i >= 0; --i) {
             con_strides[i] = con_strides[i + 1] * con_sizes[i + 1];
         }
 
@@ -327,7 +336,7 @@ public:
         //   input_label_strides[t][l] = stride in input t for combined_label[l]
         //   If the label doesn't appear => stride = 0 (broadcast / absent).
         //   If the label appears but input's dim size is 1 => stride = 0 (broadcast).
-        std::vector<std::vector<uint32_t>> input_label_strides(inputs.size());
+        luisa::vector<luisa::vector<uint32_t>> input_label_strides(inputs.size());
         for (size_t t = 0; t < inputs.size(); ++t) {
             auto &sub = input_subs[t];
             auto &strides = inputs[t].get().strides();
@@ -336,7 +345,7 @@ public:
             for (uint32_t l = 0; l < total_labels; ++l) {
                 char lbl = combined_labels[l];
                 auto pos = sub.find(lbl);
-                if (pos != std::string::npos) {
+                if (pos != luisa::string::npos) {
                     // If this input's dim is 1, it's broadcast — use stride 0
                     if (shape[pos] == 1u && label_size[lbl] > 1u) {
                         input_label_strides[t][l] = 0u;
@@ -347,12 +356,12 @@ public:
             }
         }
 
-        visit_typeid<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type(), [&]<typename T>() {
+        visit_type_index<NNFilteredTypeList<IsFloatingPoint>>(Y.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &y = static_cast<NNTensor<T> &>(Y);
 
             // Prepare typed input tensor references
-            std::vector<NNTensor<T> *> typed_inputs(inputs.size());
+            luisa::vector<NNTensor<T> *> typed_inputs(inputs.size());
             for (size_t t = 0; t < inputs.size(); ++t) {
                 typed_inputs[t] = &static_cast<NNTensor<T> &>(inputs[t].get());
             }
@@ -569,10 +578,10 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Einsum) {
-    std::string equation;
+    luisa::string equation;
     if (auto p = node.try_get_attr("equation"))
         equation = p->get<onnx::AttributeType::STRING>();
-    return std::make_unique<Einsum>(std::move(equation));
+    return luisa::make_unique<Einsum>(std::move(equation));
 };
 
 }// namespace lcml::onnx

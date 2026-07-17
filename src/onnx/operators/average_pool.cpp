@@ -2,6 +2,8 @@
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
 #include "onnx/fp_quantized.h"
+#include <luisa/core/stl/vector.h>
+#include <luisa/core/stl/memory.h>
 
 namespace lcml::onnx {
 
@@ -9,20 +11,20 @@ namespace lcml::onnx {
 // ONNX spec: attributes: auto_pad, ceil_mode, count_include_pad, kernel_shape, pads, strides
 class AveragePool : public Operator {
 private:
-    std::vector<int> kernel_shape_;
-    std::vector<int> pads_;
-    std::vector<int> strides_;
-    int count_include_pad_;
+    luisa::vector<int32_t> kernel_shape_;
+    luisa::vector<int32_t> pads_;
+    luisa::vector<int32_t> strides_;
+    int32_t count_include_pad_;
 
 public:
-    AveragePool(std::vector<int> kernel_shape, std::vector<int> pads,
-                std::vector<int> strides, int count_include_pad)
+    AveragePool(luisa::vector<int32_t> kernel_shape, luisa::vector<int32_t> pads,
+                luisa::vector<int32_t> strides, int32_t count_include_pad)
         : Operator("AveragePool"), kernel_shape_(std::move(kernel_shape)),
           pads_(std::move(pads)), strides_(std::move(strides)),
           count_include_pad_(count_include_pad) {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 1 && outputs.size() == 1,
                      "AveragePool requires 1 input and 1 output.");
@@ -33,8 +35,8 @@ public:
         auto const &y_shape = Y.shape();// (N, C, oH, oW)
         auto spatial_dims = x_shape.size() - 2;
 
-        std::vector<int> strides = strides_;
-        std::vector<int> pads = pads_;
+        luisa::vector<int32_t> strides = strides_;
+        luisa::vector<int32_t> pads = pads_;
         if (strides.empty()) strides.assign(spatial_dims, 1);
         if (pads.empty()) pads.assign(spatial_dims * 2, 0);
         // ONNX pads for 2D: [top, left, bottom, right]; expand symmetric if only 2 given
@@ -52,8 +54,8 @@ public:
         auto const &y_shape = Y.shape();
         auto spatial_dims = x_shape.size() - 2;
 
-        std::vector<int> strides = strides_;
-        std::vector<int> pads = pads_;
+        luisa::vector<int32_t> strides = strides_;
+        luisa::vector<int32_t> pads = pads_;
         if (strides.empty()) strides.assign(spatial_dims, 1);
         if (pads.empty()) pads.assign(spatial_dims * 2, 0);
         // ONNX pads for 2D: [top, left, bottom, right]; expand symmetric if only 2 given
@@ -63,7 +65,7 @@ public:
         }
 #endif
 
-        visit_typeid<NNTypeList>(X.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(X.element_type_index(), [&]<typename T>() {
             using VT = nn_storage_type_t<T>;
             auto &x = static_cast<NNTensor<T> &>(X);
             auto &y = static_cast<NNTensor<T> &>(Y);
@@ -72,8 +74,8 @@ public:
             uint32_t iH = x_shape[2], iW = x_shape[3];
             uint32_t kH = kernel_shape_[0], kW = kernel_shape_[1];
             uint32_t oH = y_shape[2], oW = y_shape[3];
-            int sH = strides[0], sW = strides[1];
-            int pH0 = pads[0], pW0 = pads[1];
+            int32_t sH = strides[0], sW = strides[1];
+            int32_t pH0 = pads[0], pW0 = pads[1];
 
             if constexpr (IsFloatingPoint<T>::value) {
                 auto one = Var<VT>{VT{1}};
@@ -143,15 +145,15 @@ public:
                                     }
                                 } else {
                                     // Scalar path: exact bounds to avoid inner branch.
-                                    auto oh_i = oh.cast<int>();
-                                    auto ow_i = ow.cast<int>();
+                                    auto oh_i = oh.cast<int32_t>();
+                                    auto ow_i = ow.cast<int32_t>();
                                     auto kh_b = max(def(0), pH0 - oh_i * sH);
-                                    auto kh_e = max(def(0), min(def(static_cast<int>(kH)), static_cast<int>(iH) + pH0 - oh_i * sH));
+                                    auto kh_e = max(def(0), min(def(static_cast<int32_t>(kH)), static_cast<int32_t>(iH) + pH0 - oh_i * sH));
                                     for (auto kh : dynamic_range(kh_b.cast<uint>(), kh_e.cast<uint>())) {
                                         auto ih = oh * sH + kh - pH0;
                                         auto row_base = base_x + ih * x.strides()[2];
                                         auto kw_b = max(def(0), pW0 - ow_i * sW);
-                                        auto kw_e = max(def(0), min(def(static_cast<int>(kW)), static_cast<int>(iW) + pW0 - ow_i * sW));
+                                        auto kw_e = max(def(0), min(def(static_cast<int32_t>(kW)), static_cast<int32_t>(iW) + pW0 - ow_i * sW));
                                         for (auto kw : dynamic_range(kw_b.cast<uint>(), kw_e.cast<uint>())) {
                                             auto iw = ow * sW + kw - pW0;
                                             sum = luisa::compute::fma(x[row_base + iw * x.strides()[3]], one, sum);
@@ -186,13 +188,13 @@ public:
                         auto base_x = n * x.strides()[0] + c * x.strides()[1];
                         auto base_y = n * y.strides()[0] + c * y.strides()[1];
                         for (auto oh : dynamic_range(oH)) {
-                            auto oh_i = oh.cast<int>();
+                            auto oh_i = oh.cast<int32_t>();
                             auto kh_b = max(def(0), pH0 - oh_i * sH);
-                            auto kh_e = max(def(0), min(def(static_cast<int>(kH)), static_cast<int>(iH) + pH0 - oh_i * sH));
+                            auto kh_e = max(def(0), min(def(static_cast<int32_t>(kH)), static_cast<int32_t>(iH) + pH0 - oh_i * sH));
                             for (auto ow : dynamic_range(oW)) {
-                                auto ow_i = ow.cast<int>();
+                                auto ow_i = ow.cast<int32_t>();
                                 auto kw_b = max(def(0), pW0 - ow_i * sW);
-                                auto kw_e = max(def(0), min(def(static_cast<int>(kW)), static_cast<int>(iW) + pW0 - ow_i * sW));
+                                auto kw_e = max(def(0), min(def(static_cast<int32_t>(kW)), static_cast<int32_t>(iW) + pW0 - ow_i * sW));
 
                                 auto sum = def(0.0f);
                                 auto count = def(0u);
@@ -222,8 +224,8 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(AveragePool) {
-    std::vector<int> kernel_shape, pads, strides;
-    int count_include_pad = 0;
+    luisa::vector<int32_t> kernel_shape, pads, strides;
+    int32_t count_include_pad = 0;
     if (auto p = node.try_get_attr("kernel_shape"))
         kernel_shape = p->get<onnx::AttributeType::INTS>();
     if (auto p = node.try_get_attr("pads"))
@@ -232,7 +234,7 @@ REGISTER_TO_DEFAULT_OPSET(AveragePool) {
         strides = p->get<onnx::AttributeType::INTS>();
     if (auto p = node.try_get_attr("count_include_pad"))
         count_include_pad = p->get<onnx::AttributeType::INT>();
-    return std::make_unique<AveragePool>(std::move(kernel_shape), std::move(pads),
+    return luisa::make_unique<AveragePool>(std::move(kernel_shape), std::move(pads),
                                          std::move(strides), count_include_pad);
 };
 

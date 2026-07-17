@@ -1,3 +1,4 @@
+#include <luisa/core/stl/memory.h>
 #include "onnx/operator.h"
 #include "onnx/operators/common.h"
 #include "onnx/onnx.h"
@@ -10,8 +11,8 @@ class Tile : public Operator {
 public:
     Tile() : Operator("Tile") {}
 
-    void forward(std::span<std::reference_wrapper<ITensor>> inputs,
-                 std::span<std::reference_wrapper<ITensor>> outputs) override {
+    void forward(luisa::span<std::reference_wrapper<ITensor>> inputs,
+                 luisa::span<std::reference_wrapper<ITensor>> outputs) override {
 #ifndef NDEBUG
         LUISA_ASSERT(inputs.size() == 2 && outputs.size() == 1, "Tile requires 2 inputs and 1 output.");
 #endif
@@ -20,7 +21,7 @@ public:
         auto ndim = data.ndim();
 
 #ifndef NDEBUG
-        LUISA_ASSERT(data.element_type() == output.element_type(), "Tile: input and output must have the same element type.");
+        LUISA_ASSERT(data.element_type_index() == output.element_type_index(), "Tile: input and output must have the same element type.");
         LUISA_ASSERT(ndim == output.ndim(), "Tile: input and output must have the same rank.");
         for (uint32_t d = 0; d < ndim; ++d) {
             LUISA_ASSERT(data.shape()[d] > 0, "Tile: input dimension must be > 0.");
@@ -32,7 +33,7 @@ public:
         bool in_is_contiguous = true;
         if (ndim > 0) {
             uint32_t expected_stride = 1u;
-            for (int d = static_cast<int>(ndim) - 1; d >= 0; --d) {
+            for (int32_t d = static_cast<int32_t>(ndim) - 1; d >= 0; --d) {
                 if (data.strides()[d] != expected_stride) {
                     in_is_contiguous = false;
                     break;
@@ -41,7 +42,7 @@ public:
             }
         }
 
-        visit_typeid<NNTypeList>(data.element_type(), [&]<typename T>() {
+        visit_type_index<NNTypeList>(data.element_type_index(), [&]<typename T>() {
             auto &in = static_cast<NNTensor<T> &>(data);
             auto &out = static_cast<NNTensor<T> &>(output);
             auto const &in_shape = in.shape();
@@ -149,7 +150,7 @@ public:
 };
 
 REGISTER_TO_DEFAULT_OPSET(Tile) {
-    return std::make_unique<Tile>();
+    return luisa::make_unique<Tile>();
 };
 
 }// namespace lcml::onnx

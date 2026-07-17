@@ -3,15 +3,8 @@
 #include "luisa_ml_config.h"
 
 #include <string_view>
-// NOTE: typeinfo is required for the type-dispatch system. This violates the project's no-RTTI rule.
-#include <typeinfo>
 
 namespace lcml::onnx::refl {
-
-template <class T>
-inline std::string_view getDynamicRawName(T const& value) noexcept {
-    return typeid(value).name();
-}
 
 template <auto f>
 consteval std::string_view getRawName() noexcept {
